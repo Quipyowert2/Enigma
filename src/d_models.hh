@@ -19,131 +19,125 @@
 #define D_MODELS_HH
 
 #include "display_internal.hh"
-#include "display.hh"
 #include "ecl_video.hh"
 #include "ecl_geom.hh"
 #include <vector>
 #include <string>
 
-namespace display {
+namespace enigma::display {
 
 /* -------------------- Image -------------------- */
 
 struct Image {
     // Variables.
-    ecl::Surface *surface;
+    std::unique_ptr<ecl::Surface> surface;
     ecl::Rect rect;  // location of image inside surface
-    int refcount;    // reference count, initialized to 1
 
     // Constructors.
-    Image(ecl::Surface *sfc);
+    explicit Image(std::unique_ptr<ecl::Surface> sfc);
     Image(ecl::Surface *sfc, ecl::Rect r);
     Image(const Image& i) = delete;
-    Image& operator= (const Image& i) = delete;
-    ~Image();
+    Image& operator=(const Image& i) = delete;
 };
 
-void incref(Image *i);
-void decref(Image *i);
-void draw_image(Image *i, ecl::GC &gc, int x, int y);
+void draw_image(Image *image, ecl::GC &gc, int x, int y);
 
 /* -------------------- ImageModel -------------------- */
 
 class ImageModel : public Model {
-    Image *image;
+    std::shared_ptr<Image> image;
     int xoff, yoff;  // relative origin of the image
 public:
     // Constructors
-    ImageModel(Image *i, int xo, int yo);
-    ImageModel(ecl::Surface *s, int xo, int yo);
+    ImageModel(const std::shared_ptr<Image> &image, int xo, int yo);
+    ImageModel(std::unique_ptr<ecl::Surface> s, int xo, int yo);
     ImageModel(ecl::Surface *s, const ecl::Rect &r, int xo, int yo);
-    ~ImageModel();
+    ~ImageModel() override;
 
     // Model interface
     void draw(ecl::GC &gc, int x, int y) override;
-    Model *clone() override;
-    void get_extension(ecl::Rect &r) override;
-    Image *get_image() { return image; }
+    std::unique_ptr<Model> clone() override;
+    ecl::Rect boundingBox() override;
+    Image *get_image() const { return image.get(); }
 };
 
 /* -------------------- ShadowModel -------------------- */
 
 class ShadowModel : public Model {
 public:
-    ShadowModel(Model *m, Model *sh);
-    ~ShadowModel();
+    ShadowModel(std::unique_ptr<Model> m, std::unique_ptr<Model> sh);
+    ~ShadowModel() override;
 
     // Model interface
     void expose(ModelLayer *ml, int vx, int vy) override;
-    void remove(ModelLayer *ml) override;
+    void removeFromLayer(ModelLayer *ml) override;
 
-    void set_callback(ModelCallback *cb) override;
+    void setCallback(ModelCallback *cb) override;
     void reverse() override;
     void restart() override;
     void draw(ecl::GC &gc, int x, int y) override;
-    void draw_shadow(ecl::GC &gc, int x, int y) override;
+    void drawShadow(ecl::GC &gc, int x, int y) override;
     Model *get_shadow() const override;
-    Model *clone() override;
+    std::unique_ptr<Model> clone() override;
 
-    void get_extension(ecl::Rect &r) override;
+    ecl::Rect boundingBox() override;
 
 private:
-    Model *model, *shade;
-    ecl::Rect extension;  // bounding extesion of model and shade
+    std::unique_ptr<Model> model;
+    std::unique_ptr<Model> shadow;
+    ecl::Rect bbox;  // combined bounding box of model and shadow
 };
 
 /* -------------------- CompositeModel -------------------- */
 
 class CompositeModel : public Model {
-    Model *bg, *fg;
+    std::unique_ptr<Model> background;
+    std::unique_ptr<Model> foreground;
 
 public:
-    CompositeModel(Model *b, Model *f) : bg(b), fg(f) {}
-    ~CompositeModel() {
-        delete bg;
-        delete fg;
-    }
+    CompositeModel(std::unique_ptr<Model> bg, std::unique_ptr<Model> fg)
+    : background(std::move(bg)), foreground(std::move(fg)) {}
 
     // Animation interface
-    void set_callback(ModelCallback *cb) override {
-        fg->set_callback(cb);
+    void setCallback(ModelCallback *cb) override {
+        foreground->setCallback(cb);
     }
     void reverse() override {
-        fg->reverse();
+        foreground->reverse();
     }
-    void restart() override { fg->restart(); }
+    void restart() override { foreground->restart(); }
 
     // Model interface
-    Model *get_shadow() const override { return bg->get_shadow(); }
-    virtual void expose(ModelLayer *ml, int vx, int vy) override {
-        fg->expose(ml, vx, vy);
+    Model *get_shadow() const override { return background->get_shadow(); }
+    void expose(ModelLayer *ml, int vx, int vy) override {
+        foreground->expose(ml, vx, vy);
     }
-    virtual void remove(ModelLayer *ml) override {
-        fg->remove(ml);
+    void removeFromLayer(ModelLayer *ml) override {
+        foreground->removeFromLayer(ml);
     }
     void draw(ecl::GC &gc, int x, int y) override {
-        bg->draw(gc, x, y);
-        fg->draw(gc, x, y);
+        background->draw(gc, x, y);
+        foreground->draw(gc, x, y);
     }
-    void draw_shadow(ecl::GC &gc, int x, int y) override {
-        bg->draw_shadow(gc, x, y);
+    void drawShadow(ecl::GC &gc, int x, int y) override {
+        background->drawShadow(gc, x, y);
     }
-    Model *clone() override { return new CompositeModel(bg->clone(), fg->clone()); }
+    std::unique_ptr<Model> clone() override {
+        return std::make_unique<CompositeModel>(background->clone(), foreground->clone());
+    }
 
-    void get_extension(ecl::Rect &r) override {
-        fg->get_extension(r);
-    }
+    ecl::Rect boundingBox() override { return foreground->boundingBox(); }
 };
 
 /* -------------------- RandomModel -------------------- */
 
 /* Creates new models randomly from a set of template models. */
 class RandomModel : public Model {
-    std::vector<std::string> modelnames;
+    std::vector<std::string> modelNames;
 
 public:
-    void add_model(const std::string &name) { modelnames.push_back(name); }
-    Model *clone() override;
+    void add_model(const std::string &name) { modelNames.push_back(name); }
+    std::unique_ptr<Model> clone() override;
 };
 
 /* -------------------- AliasModel -------------------- */
@@ -152,74 +146,66 @@ class AliasModel : public Model {
     std::string name;
 
 public:
-    AliasModel(std::string modelname) : name(std::move(modelname)) {}
-    Model *clone() override;
+    explicit AliasModel(const std::string &modelname) : name(modelname) {}
+    std::unique_ptr<Model> clone() override;
 };
 
 /* -------------------- Animations -------------------- */
 
-struct AnimFrame : public ecl::Nocopy {
-    // Variables
-    Model *model;
+struct AnimFrame {
+    std::unique_ptr<Model> model;
     double duration;
 
-    // Constructor and Destructor
-    AnimFrame(Model *m, double dur) : model(m), duration(dur) {}
-
-    ~AnimFrame() { delete model; }
+    AnimFrame(std::unique_ptr<Model> model, double duration)
+        : model(std::move(model)), duration(duration) {}
 };
 
 struct AnimRep {
-    // Variables
-    std::vector<AnimFrame *> frames;
-    bool loop;
-    int refcount;
+    std::vector<std::unique_ptr<AnimFrame>> frames;
+    bool looping;
 
-    // Constructor and Destructor
-    AnimRep(bool l) : loop(l), refcount(1) {}
-
-    ~AnimRep() { delete_sequence(frames.begin(), frames.end()); }
+    explicit AnimRep(bool looping) : looping(looping) {}
 };
 
 class Anim2d : public Model, public ecl::Nocopy {
 public:
-    Anim2d(bool loop);
-    ~Anim2d();
-    void set_callback(ModelCallback *cb) override { callback = cb; }
+    explicit Anim2d(bool looping);
+    Anim2d(const std::shared_ptr<AnimRep> &rep, const ecl::Rect &bbox);
 
-    void add_frame(Model *m, double duration);
+    void setCallback(ModelCallback *cb) override;
+
+    void addFrame(std::unique_ptr<Model> model, double duration);
 
     /* ---------- Model interface ---------- */
     void draw(ecl::GC &gc, int x, int y) override;
-    void draw_shadow(ecl::GC &gc, int x, int y) override;
-    Model *clone() override { return new Anim2d(rep, extension); }
-    void reverse() override { reversep = !reversep; }
+    void drawShadow(ecl::GC &gc, int x, int y) override;
+    std::unique_ptr<Model> clone() override;
+    void reverse() override;
     void restart() override;
 
-    void expose(ModelLayer *ml, int vx, int vy) override;
-    void remove(ModelLayer *ml) override;
+    void expose(ModelLayer *layer, int vx, int vy) override;
+    void removeFromLayer(ModelLayer *layer) override;
 
     void tick(double dtime) override;
-    bool has_changed(ecl::Rect &changed_region) override;
-    bool is_garbage() const override { return finishedp; }
+    bool hasChanged(ecl::Rect &changedRegion) override;
+    bool hasFinished() const override { return finished; }
 
-    void move(int newx, int newy);
-    void get_extension(ecl::Rect &r) override;
+    void move(int newX, int newY);
+
+    ecl::Rect boundingBox() override;
 
 private:
-    Anim2d(AnimRep *r, ecl::Rect &ext_r);
+    // ---------- Variables ----------
+    std::shared_ptr<AnimRep> rep;
+    unsigned curframe = 0; // Current frame number
+    double frameTime = 0;  // Elapsed time since frame was activated
+    bool finished = false; // Animation has finished
+    bool changed = false;  // Model state has changed since last redraw
+    bool reversed = false; // Play the animation in reverse direction
 
-    /* ---------- Variables ---------- */
-    AnimRep *rep;
-    unsigned curframe;  // Current frame number
-    double frametime;   // Elapsed time since frame was activated
-    bool finishedp;     // Animation has finished
-    bool changedp;      // Model state has changed since last redraw
-    bool reversep;      // Play the animation in reverse direction
-
-    int videox, videoy;   // Video coordinates of sprite
-    ecl::Rect extension;  // bounding extension of all frames
-    ModelCallback *callback;
+    int screenX = 0, screenY = 0;   // Video coordinates of sprite
+    ecl::Rect bbox;  // largest bounding box of all frames
+    ModelCallback *callback = nullptr;
 };
 
 ecl::Surface *GetSurface(const std::string &filename);

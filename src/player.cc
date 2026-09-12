@@ -18,17 +18,17 @@
  *
  */
 #include "player.hh"
-#include "Inventory.hh"
-#include "display.hh"
-#include "errors.hh"
-#include "SoundEffectManager.hh"
-#include "client.hh"
-#include "server.hh"
-#include "world.hh"
-#include "main.hh"
-#include "items/GlassesItem.hh"
 
+#include "client.hh"
+#include "display.hh"
 #include "ecl_util.hh"
+#include "errors.hh"
+#include "Inventory.hh"
+#include "items/GlassesItem.hh"
+#include "main.hh"
+#include "server.hh"
+#include "SoundEffectManager.hh"
+#include "world.hh"
 
 using namespace std;
 using namespace enigma;
@@ -124,7 +124,7 @@ void LevelLocalData::reset() {
 namespace {
 
 LevelLocalData leveldat;
-std::vector<PlayerInfo> players(2);  // this currently has always size 2
+std::vector<PlayerInfo> players(2);  // this currently always has size 2
 unsigned icurrent_player = 0;
 std::vector<Actor *> unassignedActors;
 
@@ -225,7 +225,7 @@ Inventory *player::GetInventory(int iplayer) {
 
 Inventory *player::GetInventory(Actor *a) {
     if (Value v = a->getAttr("owner"))
-        return GetInventory((int)v);
+        return GetInventory(v.toInt());
     return nullptr;
 }
 
@@ -263,7 +263,7 @@ unsigned player::NumberOfRealPlayers() {
 }
 
 /*! Sets respawn positions for black or white actors. */
-void player::SetRespawnPositions(GridPos pos, Value color) {
+void player::SetRespawnPositions(GridPos pos, const Value& color) {
     ecl::V2 center = pos.center();
 
     for (auto &player : players) {
@@ -277,7 +277,7 @@ void player::SetRespawnPositions(GridPos pos, Value color) {
 }
 
 /*! Remove respawn positions for black or white actors */
-void player::RemoveRespawnPositions(Value color) {
+void player::RemoveRespawnPositions(const Value& color) {
     for (auto &player : players) {
         for (auto &actor : player.actors) {
             if (Value ac = actor->getAttr("color")) {
@@ -318,7 +318,7 @@ void player::AddActor(unsigned iplayer, Actor *a) {
 
     if (players[iplayer].actors.size() == 1) {
         // the ``main actor'' was set
-        client::Msg_PlayerPosition(iplayer, a->get_pos());
+        client::Msg_PlayerPosition(iplayer, a->getPos());
     }
 }
 
@@ -381,10 +381,10 @@ void player::CheckDeadActors() {
         for (auto a : actors) {
             std::string essId;
             if (Value v = a->getAttr("essential_id"))
-                essId = v.to_string();
+                essId = v.toString();
             else
                 essId = a->get_traits().name;
-            int essential = a->getAttr("essential");
+            int essential = a->getAttr("essential").toInt();
             // count number of necessary actors per kind
             if (essential == 2)
                 --essMap[essId];
@@ -394,20 +394,20 @@ void player::CheckDeadActors() {
                 if (pl >= 0 && a->controlled_by(pl) && a->isSteerable()) {
                     has_living_actor = true;
                 }
-                // count number of alive actors per kind
+                // count number of living actors per kind
                 if (essential == 0 || essential == 2)
                     ++essMap[essId];
             } else {
                 // player is dead and could not resurrect
                 if (essential == 1) {
-                    // actor is personnally essential but dead
+                    // actor is essential but dead
                     new_game = true;
                 }
             }
         }
-        // check if for any kind we have less living actors as required
-        for (itEss = essMap.begin(); itEss != essMap.end(); itEss++) {
-            if ((*itEss).second < 0)
+        // check if for any kind we have fewer living actors as required
+        for (itEss = essMap.begin(); itEss != essMap.end(); ++itEss) {
+            if (itEss->second < 0)
                 new_game = true;
         }
 
@@ -488,7 +488,7 @@ void player::Tick(double dtime) {
 void player::MessagePlayerPositionsToClient() {
     for (unsigned iplayer = 0; iplayer < players.size(); ++iplayer)
         if (Actor *ac = player::GetMainActor(iplayer))
-            client::Msg_PlayerPosition(iplayer, ac->get_pos());
+            client::Msg_PlayerPosition(iplayer, ac->getPos());
 }
 
 void player::InhibitPickup(bool flag) {
@@ -500,7 +500,7 @@ void player::InhibitPickup(bool flag) {
 Inventory *player::MayPickup(Actor *a, Item *it, bool allowFlying) {
     int iplayer = -1;
     if (Value v = a->getAttr("owner"))
-        iplayer = v;
+        iplayer = v.toInt();
     if (iplayer < 0 || (unsigned)iplayer >= players.size()) {
         return nullptr;
     }
@@ -524,13 +524,13 @@ void player::PickupItem(Actor *a, GridPos p) {
     }
 }
 
-bool player::PickupAsItem(Actor *a, GridObject *obj, std::string kind) {
+bool player::PickupAsItem(Actor *a, GridObject *obj, const std::string& kind) {
     if (Item *item = MakeItem(kind.c_str())) {
         if (Inventory *inv = MayPickup(a, item, true)) {
             inv->add_item(item);
             obj->transferIdentity(item);
             player::RedrawInventory(inv);
-            sound::EmitSoundEvent("pickup", a->get_pos());
+            sound::EmitSoundEvent("pickup", a->getPos());
             return true;
         } else {
             DisposeObject(item);
@@ -547,12 +547,11 @@ void player::ActivateFirstItem() {
         Actor *ac = nullptr;
         GridPos p;
         bool can_drop_item = false;
-        std::vector<Actor *>::iterator itr;
-        for (itr = players[icurrent_player].actors.begin();
-             itr != players[icurrent_player].actors.end() && ac == nullptr; itr++) {
+        for (auto itr = players[icurrent_player].actors.begin();
+             itr != players[icurrent_player].actors.end() && ac == nullptr; ++itr) {
             if (!(*itr)->is_dead()) {
                 ac = *itr;
-                p = GridPos(ac->get_pos());
+                p = GridPos(ac->getPos());
                 can_drop_item = ac->can_drop_items();
             }
         }
@@ -602,5 +601,5 @@ void player::RedrawInventory() {
         Item *it = inv->get_item(i);
         modelnames.push_back(it->get_inventory_model());
     }
-    display::GetStatusBar()->set_inventory(CurrentPlayer() == 0 ? YIN : YANG, modelnames);
+    display::GetStatusBar()->setInventory(CurrentPlayer() == 0 ? YIN : YANG, modelnames);
 }

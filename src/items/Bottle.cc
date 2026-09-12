@@ -57,7 +57,7 @@ namespace enigma {
     
     bool Bottle::actor_hit(Actor *a) {
         if (state == BROKEN) {
-            ActorInfo &ai = * a->get_actorinfo();
+            const ActorInfo &ai = a->getActorInfo();
             if (!ai.grabbed && a->is_on_floor()) {
                 SendMessage(a, "_shatter");
             }
@@ -68,13 +68,13 @@ namespace enigma {
     
     ItemAction Bottle::activate(Actor *a, GridPos) {
         if (Value v = getAttr("text")) {
-            std::string txt(v);
+            std::string txt = v.toString();
             // translate text
             txt = server::LoadedProxy->getLocalizedString(txt);
             client::Msg_ShowDocument(txt, true);
             return ITEM_KILL;          // remove from inventory
         } else if (state == IDLE) {
-            if (!SendMessage(a, "_booze", getAttr("interval")).to_bool())
+            if (!SendMessage(a, "_booze", getAttr("interval")).toBool())
                 return ITEM_KEEP;
         }
         return ITEM_DROP;

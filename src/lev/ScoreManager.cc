@@ -18,69 +18,53 @@
  */
 
 #include "lev/ScoreManager.hh"
-#include "enigma.hh"
-#include "errors.hh"
+
 #include "DOMErrorReporter.hh"
 #include "DOMSchemaResolver.hh"
+#include "ecl_system.hh"
+#include "ecl_util.hh"
+#include "enigma.hh"
+#include "errors.hh"
+#include "file.hh"
+#include "gui/ErrorMenu.hh"
 #include "LocalToXML.hh"
+#include "main.hh"
+#include "nls.hh"
+#include "options.hh"
 #include "Utf8ToXML.hh"
 #include "utilXML.hh"
 #include "XMLtoLocal.hh"
 #include "XMLtoUtf8.hh"
-#include "ecl_util.hh"
-#include "ecl_system.hh"
-#include "gui/ErrorMenu.hh"
-#include "nls.hh"
-#include "file.hh"
 
-#include "main.hh"
-#include "options.hh"
-
-#include <cmath>
-#include <ctime>
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <xercesc/dom/DOM.hpp>
+#include <xercesc/framework/MemBufInputSource.hpp>
+#include <xercesc/framework/Wrapper4InputSource.hpp>
+#include <xercesc/util/PlatformUtils.hpp>
+#include <xercesc/util/XercesVersion.hpp>
 #include <xercesc/util/XMLDouble.hpp>
 #include <xercesc/util/XMLString.hpp>
 #include <xercesc/util/XMLUniDefs.hpp>
-#include <xercesc/util/PlatformUtils.hpp>
-#include <xercesc/util/XercesVersion.hpp>
-#include <xercesc/framework/MemBufInputSource.hpp>
-#include <xercesc/framework/Wrapper4InputSource.hpp>
-#if _XERCES_VERSION < 30000
-#include <xercesc/framework/LocalFileFormatTarget.hpp>
-#include <xercesc/framework/MemBufFormatTarget.hpp>
-#endif
 #include <zlib.h>
 
-
 using namespace std;
-using namespace enigma;
-XERCES_CPP_NAMESPACE_USE 
+XERCES_CPP_NAMESPACE_USE
+
+namespace enigma::lev {
 
 namespace {
-#if _XERCES_VERSION >= 30000
     class ScoreDomSerFilter : public DOMLSSerializerFilter {
         public:
             virtual DOMNodeFilter::FilterAction acceptNode(const DOMNode *node) const;
-#else
-    class ScoreDomSerFilter : public DOMWriterFilter {
-        public:
-            virtual short acceptNode(const DOMNode *node) const;
-#endif
             virtual unsigned long getWhatToShow () const {
                 return DOMNodeFilter::SHOW_ALL;
             }
             virtual void setWhatToShow (unsigned long toShow) {}
     };
     
-#if _XERCES_VERSION >= 30000
     DOMNodeFilter::FilterAction ScoreDomSerFilter::acceptNode(const DOMNode *node) const {
-#else
-    short ScoreDomSerFilter::acceptNode(const DOMNode *node) const {
-#endif
         if (node->getNodeType () == DOMNode::ELEMENT_NODE &&
                  std::string(XMLtoUtf8(node->getNodeName()).c_str()) == "level") {
             const DOMElement *e = dynamic_cast<const DOMElement *>(node);
@@ -92,9 +76,8 @@ namespace {
         }
         return DOMNodeFilter::FILTER_ACCEPT;
     }
-}
+} // namespace
 
-namespace enigma { namespace lev {
     ScoreManager *ScoreManager::theSingleton = 0;
     unsigned ScoreManager::ctab[256];
     unsigned ScoreManager::pol = 0x1021;
@@ -171,20 +154,12 @@ namespace enigma { namespace lev {
                     errMessage = "Score file incomplete or corrupted.\n";
                     throw XFrontend("");
                 }
-#if _XERCES_VERSION >= 30000
                 std::unique_ptr<DOMLSInput> domInputScoreSource(new Wrapper4InputSource(
                     new MemBufInputSource(reinterpret_cast<const XMLByte *>(score.c_str()),
                                           score.size(), "", false)));
                 doc = app.domParser->parse(domInputScoreSource.get());
-#else
-                std::unique_ptr<Wrapper4InputSource> domInputScoreSource(new Wrapper4InputSource(
-                    new MemBufInputSource(reinterpret_cast<const XMLByte *>(score.c_str()),
-                                          score.size(), "", false)));
-                doc = app.domParser->parse(*domInputScoreSource);
-#endif
-                
             }
-            if (app.domParserSchemaResolver->didResolveSchema() &&  doc != NULL 
+            if (app.domParserSchemaResolver->didResolveSchema() &&  doc != nullptr
                     && !app.domParserErrorHandler->getSawErrors()) {
                 propertiesElem = dynamic_cast<DOMElement *>(doc->getElementsByTagName(
                         Utf8ToXML("properties").x_str())->item(0));
@@ -308,12 +283,10 @@ namespace enigma { namespace lev {
             throw XFrontend("Cannot load application score file: " + scorePath +
                     "\nError: " + errMessage);
         }
-        
-        
     }
 
     ScoreManager::~ScoreManager() {
-        if (doc != NULL)
+        if (doc != nullptr)
             shutdown();
     }
 
@@ -335,7 +308,7 @@ namespace enigma { namespace lev {
         hasValidUserId = true;
     }
     
-    std::string ScoreManager::sec(std::string target) {
+    std::string ScoreManager::sec(const std::string& target) {
         int len = target.size();
         unsigned r = 0;
         const char *p = target.c_str();
@@ -348,10 +321,10 @@ namespace enigma { namespace lev {
     bool ScoreManager::save() {
         bool result = true;
         std::string errMessage("");
-        Bytef *ptrCompressed = NULL;
-        Bytef *ptrUncompressed = NULL;
+        Bytef *ptrCompressed = nullptr;
+        Bytef *ptrUncompressed = nullptr;
         
-        if (doc == NULL || !isModified)
+        if (doc == nullptr || !isModified)
             return true;
 
         int count = getInt("Count");
@@ -360,7 +333,7 @@ namespace enigma { namespace lev {
         setProperty("UserName", app.state->getString("UserName"));
         
         if (!hasValidUserId) {
-            finishUserId(std::time(NULL) & 0xFFFF);
+            finishUserId(std::time(nullptr) & 0xFFFF);
         }
         
         if (userId.find("0000") == 0) {
@@ -435,7 +408,6 @@ namespace enigma { namespace lev {
         try {
             ScoreDomSerFilter serialFilter;
             for (int j=0; j < 2; j++) { // save twice: first all, then without dat scores
-#if _XERCES_VERSION >= 30000
 //            result = app.domSer->writeToURI(doc, LocalToXML(& path).x_str());
                 if (j==1)
                     (app.domSer)->setFilter(&serialFilter);
@@ -443,24 +415,8 @@ namespace enigma { namespace lev {
                 std::string contents(XMLtoUtf8(XMLString).c_str());
                 XMLString::release(&XMLString); 
                 if (j==1)
-                    (app.domSer)->setFilter(NULL);
+                    (app.domSer)->setFilter(nullptr);
                 contents.replace(contents.find("UTF-16"), 6, "UTF-8"); // adapt encoding info
-#else
-//            XMLFormatTarget *myFormTarget = new LocalFileFormatTarget(path.c_str());
-//            result = app.domSer->writeNode(myFormTarget, *doc);            
-//            delete myFormTarget;   // flush
-            
-                MemBufFormatTarget *memFormTarget = new MemBufFormatTarget();
-                if (j==1)
-                    app.domSer->setFilter(&serialFilter);
-                result = app.domSer->writeNode(memFormTarget, *doc);
-                if (j==1)
-                    app.domSer->setFilter(NULL);
-                std::string contents(
-                        reinterpret_cast<const char *>(memFormTarget->getRawBuffer()),
-                        memFormTarget->getLen());
-                delete memFormTarget;
-#endif
 
                 // We need to allocate enough memory to save the
                 // deflated (compressed) xml-file.
@@ -515,7 +471,7 @@ namespace enigma { namespace lev {
                 // completely screwed up. One can recover the correct
                 // date and time though, and that's why we try to keep it
                 // backwards compatible here.
-                time_t now = std::time(NULL);
+                time_t now = std::time(nullptr);
 
                 // Next, calculate CRC-32.
                 uint32_t crc = crc32(0L, Z_NULL, 0);
@@ -599,9 +555,9 @@ namespace enigma { namespace lev {
 
     void ScoreManager::shutdown() {
         save();
-        if (doc != NULL)
+        if (doc != nullptr)
             doc->release();
-        doc = NULL;
+        doc = nullptr;
     }
 
 
@@ -612,7 +568,7 @@ namespace enigma { namespace lev {
             difficulty = DIFFICULTY_HARD;
         
         DOMElement * level = getLevel(levelProxy);
-        if (level != NULL) {
+        if (level != nullptr) {
             const XMLCh *attr = level->getAttribute(Utf8ToXML((difficulty == DIFFICULTY_HARD) ? "diff1" : "easy1").x_str());
             int score = (XMLString::stringLen(attr) > 0) ? XMLString::parseInt(attr) : -1;
             return score != SCORE_UNSOLVED;
@@ -627,12 +583,12 @@ namespace enigma { namespace lev {
             difficulty = DIFFICULTY_HARD;
         
         DOMElement * level = getLevel(levelProxy);
-        if (level != NULL && XMLString::parseInt(level->getAttribute(
+        if (level != nullptr && XMLString::parseInt(level->getAttribute(
                 Utf8ToXML("version").x_str())) == levelProxy->getScoreVersion()) {
             const XMLCh *attr = level->getAttribute(Utf8ToXML((difficulty == DIFFICULTY_HARD) ? "diff1" : "easy1").x_str());
             int score = (XMLString::stringLen(attr) > 0) ? XMLString::parseInt(attr) : -1;
             return score == SCORE_SOLVED;
-        } else if (level != NULL && XMLString::parseInt(level->getAttribute(
+        } else if (level != nullptr && XMLString::parseInt(level->getAttribute(
                 Utf8ToXML("version").x_str())) != levelProxy->getScoreVersion()){
             return true;
         } else
@@ -641,7 +597,7 @@ namespace enigma { namespace lev {
 
     bool ScoreManager::isOutdated(lev::Proxy *levelProxy, int difficulty) {
         DOMElement * level = getCreateLevel(levelProxy);
-        if (level == NULL || XMLString::parseInt(level->getAttribute(
+        if (level == nullptr || XMLString::parseInt(level->getAttribute(
                 Utf8ToXML("version").x_str())) != levelProxy->getScoreVersion()) {
             return false;  // unsolved, thus not outdated
         }
@@ -676,7 +632,7 @@ namespace enigma { namespace lev {
             difficulty = DIFFICULTY_HARD;
         
         DOMElement * level = getLevel(levelProxy);
-        if (level == NULL || XMLString::parseInt(level->getAttribute(
+        if (level == nullptr || XMLString::parseInt(level->getAttribute(
                 Utf8ToXML("version").x_str())) != levelProxy->getScoreVersion()) {
             return SCORE_UNSOLVED;
         }
@@ -724,7 +680,7 @@ namespace enigma { namespace lev {
             score = SCORE_MAX1;
         
         if (!hasValidUserId) {
-            finishUserId(std::time(NULL) & 0xFFFF);
+            finishUserId(std::time(nullptr) & 0xFFFF);
         }
 
         DOMElement * level = getCreateLevel(levelProxy);
@@ -852,7 +808,7 @@ namespace enigma { namespace lev {
         ecl::Assert <XFrontend> (difficulty >= DIFFICULTY_EASY &&  
                 difficulty <= DIFFICULTY_ANY, "ScoreManager::markUnsolved illegal difficulty");
         DOMElement * level = getLevel(levelProxy);
-        if (level != NULL && XMLString::parseInt(level->getAttribute(
+        if (level != nullptr && XMLString::parseInt(level->getAttribute(
                 Utf8ToXML("version").x_str())) == levelProxy->getScoreVersion()) {
             const XMLCh *attr = level->getAttribute(Utf8ToXML((difficulty == DIFFICULTY_HARD) ? "diff1" : "easy1").x_str());
             int score = (XMLString::stringLen(attr) > 0) ? XMLString::parseInt(attr) : -1;
@@ -869,10 +825,10 @@ namespace enigma { namespace lev {
                 difficulty <= DIFFICULTY_ANY, "ScoreManager::markSolved illegal difficulty");
         if (enigma::WizardMode) {
             if (!hasValidUserId) {
-                finishUserId(std::time(NULL) & 0xFFFF);
+                finishUserId(std::time(nullptr) & 0xFFFF);
             }
             DOMElement * level = getLevel(levelProxy);
-            if (level != NULL && XMLString::parseInt(level->getAttribute(
+            if (level != nullptr && XMLString::parseInt(level->getAttribute(
                     Utf8ToXML("version").x_str())) == levelProxy->getScoreVersion()) {
                 const XMLCh *attr = level->getAttribute(Utf8ToXML((difficulty == DIFFICULTY_HARD) ? "diff1" : "easy1").x_str());
                 int score = (XMLString::stringLen(attr) > 0) ? XMLString::parseInt(attr) : -1;
@@ -882,8 +838,8 @@ namespace enigma { namespace lev {
             // reset the score to solved but no score value
             updateUserScore(levelProxy, difficulty, SCORE_MAX2); // store max possible score
             level = getLevel(levelProxy);
-            // check if score is created - it may be NULL if level is not released
-            if (level != NULL && XMLString::parseInt(level->getAttribute(
+            // check if score is created - it may be nullptr if level is not released
+            if (level != nullptr && XMLString::parseInt(level->getAttribute(
                     Utf8ToXML("version").x_str())) == levelProxy->getScoreVersion()) {
                 isModified = true;
                 level->setAttribute(Utf8ToXML((difficulty == DIFFICULTY_HARD) ? "diff1" : "easy1").x_str(),
@@ -956,11 +912,11 @@ namespace enigma { namespace lev {
     
     void ScoreManager::setRating(lev::Proxy *levelProxy, int rating) {
         if (!hasValidUserId) {
-            finishUserId(std::time(NULL) & 0xFFFF);
+            finishUserId(std::time(nullptr) & 0xFFFF);
         }
         if (rating == -1) {
             DOMElement *level = getLevel(levelProxy);
-            if (level == NULL)
+            if (level == nullptr)
                 // no level score entry for this level - -1 is default anyway
                return;
             else if (XMLString::parseInt(level->getAttribute(
@@ -973,7 +929,7 @@ namespace enigma { namespace lev {
                         Utf8ToXML(ecl::strf("%d",rating)).x_str());
                 }
                 DOMAttr *irAttr = level->getAttributeNode(Utf8ToXML("rating-inherited").x_str());
-                if ((irAttr != NULL) && irAttr->getSpecified()) {
+                if ((irAttr != nullptr) && irAttr->getSpecified()) {
                     // delete any inherited rating that may shadow a default of -1
                     level->removeAttribute(Utf8ToXML("rating-inherited").x_str());
                     isModified = true;
@@ -1001,7 +957,7 @@ namespace enigma { namespace lev {
     
     int ScoreManager::getRating(lev::Proxy *levelProxy) {
         DOMElement * level = getLevel(levelProxy);
-        if (level == NULL)
+        if (level == nullptr)
             return -1;
         else {
             const XMLCh *attr = level->getAttribute(Utf8ToXML("rating").x_str());
@@ -1018,7 +974,7 @@ namespace enigma { namespace lev {
     
     bool ScoreManager::isRatingInherited(lev::Proxy *levelProxy) {
         DOMElement * level = getLevel(levelProxy);
-        if (level == NULL)
+        if (level == nullptr)
             return false;
         if (XMLString::parseInt(level->getAttribute(
                 Utf8ToXML("version").x_str())) == levelProxy->getScoreVersion()) {
@@ -1052,14 +1008,14 @@ namespace enigma { namespace lev {
             if (it != curLevelScores.end()) {
                 return it->second;
             } else {
-                return NULL;
+                return nullptr;
             }
         }
     }
     
     DOMElement * ScoreManager::getCreateLevel(lev::Proxy *levelProxy) {
         DOMElement * level = getLevel(levelProxy);
-        if (level == NULL || XMLString::parseInt(level->getAttribute(
+        if (level == nullptr || XMLString::parseInt(level->getAttribute(
                 Utf8ToXML("version").x_str())) != levelProxy->getScoreVersion()) {
             // no level score entry for this scoreversion exists - create it
             isModified = true;
@@ -1071,7 +1027,7 @@ namespace enigma { namespace lev {
             levelsElem->appendChild(newLevel);
             std::string cacheKey = levelProxy->getId() + "#" + ecl::strf("%d", levelProxy->getScoreVersion());
             allLevelScores[cacheKey] = newLevel;
-            if (level != NULL && XMLString::parseInt(level->getAttribute(
+            if (level != nullptr && XMLString::parseInt(level->getAttribute(
                     Utf8ToXML("version").x_str())) <  levelProxy->getScoreVersion()) {
                 // this new levelversion is newer than the previous current one
                 // update solved status form previous current one
@@ -1096,7 +1052,7 @@ namespace enigma { namespace lev {
                         Utf8ToXML(ecl::strf("%d",oldRating)).x_str());
                 }
                 curLevelScores[levelProxy->getId()] = newLevel;
-            } else if (level == NULL) {
+            } else if (level == nullptr) {
                 curLevelScores[levelProxy->getId()] = newLevel;
             }
             level = newLevel;
@@ -1278,4 +1234,4 @@ namespace enigma { namespace lev {
         }
         return result;
     }
-}} // namespace enigma::lev
+} // namespace enigma::lev

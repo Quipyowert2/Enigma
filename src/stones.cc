@@ -17,13 +17,13 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#include "errors.hh"
 #include "stones_internal.hh"
-#include "server.hh"
-#include "client.hh"
-#include "player.hh"
+
+#include "errors.hh"
 #include "Inventory.hh"
 #include "main.hh"
+#include "player.hh"
+#include "server.hh"
 
 using namespace std;
 
@@ -33,22 +33,22 @@ namespace enigma {
 
 void Stone::on_creation(GridPos p) {
     // notify rubberbands that may now exceed max/min limits
-    ObjectList olist = getAttr("rubbers");  // a private deletion resistant copy
+    ObjectList olist = getAttr("rubbers").toObjectList();  // a private deletion-resistant copy
     for (auto &elem : olist)
         SendMessage(elem, "_recheck");
     GridObject::on_creation(p);
 }
 
-void Stone::transform(std::string kind) {
+void Stone::transform(const std::string& kind) {
     Stone *newStone = MakeStone(kind.c_str());
     transferIdentity(newStone);  // subclasses may hook this call
-    ObjectList olist = getAttr("rubbers");
+    ObjectList olist = getAttr("rubbers").toObjectList();
     for (auto &elem : olist) {
         elem->setAttr("anchor2", newStone);
     }
-    olist = getAttr("wires");
+    olist = getAttr("wires").toObjectList();
     for (auto &elem : olist) {
-        elem->setAttr((this == elem->getAttr("anchor1")) ? "anchor1" : "anchor2", newStone);
+        elem->setAttr((this == elem->getAttr("anchor1").toObject()) ? "anchor1" : "anchor2", newStone);
     }
     SetStone(get_pos(), newStone);
 }
@@ -59,8 +59,8 @@ bool maybe_push_stone(const StoneContact &sc) {
     if(sc.actor && (!sc.actor->isMoribund())) {
         Direction dir = GetPushDirection(sc);
         if (dir != enigma::NODIR) {
-            sc.actor->send_impulse(sc.stonepos, dir);
-            return GetStone(sc.stonepos) == nullptr;  // return true only if stone vanished
+            sc.actor->send_impulse(sc.stonePos, dir);
+            return GetStone(sc.stonePos) == nullptr;  // return true only if stone vanished
         }
     }
     return false;
@@ -72,8 +72,7 @@ Stone::Stone() : freeze_check_running(false) {
 Stone::Stone(const char *kind) : GridObject(kind), freeze_check_running(false) {
 }
 
-Stone::~Stone() {
-}
+Stone::~Stone() = default;
 
 const StoneTraits &Stone::get_traits() const {
     static StoneTraits default_traits = {"INVALID", st_INVALID, stf_none, material_stone, 1.0,
@@ -111,7 +110,7 @@ void Stone::on_impulse(const Impulse &impulse) {
 
 void Stone::propagateImpulse(const Impulse &impulse) {
     if (!impulse.byWire) {
-        ObjectList olist = getAttr("fellows");
+        ObjectList olist = getAttr("fellows").toObjectList();
         for (auto &elem : olist) {
             if (Stone *fellow = dynamic_cast<Stone *>(elem)) {
                 Impulse wireImpulse(this, fellow->get_pos(), impulse.dir, true);
@@ -125,7 +124,7 @@ const char *Stone::collision_sound() {
     return "stone";
 }
 
-/* Move a stone (regardless whether it is_movable() or not) if
+/* Move a stone (regardless of whether it is_movable() or not) if
    the destination field is free.
    Returns: true if stone has been moved.
 
@@ -168,11 +167,11 @@ bool Stone::on_move(const GridPos &origin) {
    default matrix, resp. defaultfactor as hit_factor. */
 ecl::V2 Stone::distortedVelocity(ecl::V2 vel, double defaultfactor = 1.0) {
     ecl::V2 newvel;
-    double factor = this->getDefaultedAttr("hit_strength", defaultfactor);
-    newvel[0] = (double)(this->getDefaultedAttr("hit_distortion_xx", 1)) * vel[0] +
-                (double)(this->getAttr("hit_distortion_xy")) * vel[1];
-    newvel[1] = (double)(this->getAttr("hit_distortion_yx")) * vel[0] +
-                (double)(this->getDefaultedAttr("hit_distortion_yy", 1)) * vel[1];
+    double factor = this->getDefaultedAttr("hit_strength", defaultfactor).toDouble();
+    newvel[0] = this->getDefaultedAttr("hit_distortion_xx", 1).toDouble() * vel[0] +
+                this->getAttr("hit_distortion_xy").toDouble() * vel[1];
+    newvel[1] = this->getAttr("hit_distortion_yx").toDouble() * vel[0] +
+                this->getDefaultedAttr("hit_distortion_yy", 1).toDouble() * vel[1];
     return newvel * factor;
 }
 
@@ -196,7 +195,7 @@ void Stone::autoJoinCluster() {
                     setAttr("$connections",
                             getConnections() & (ALL_DIRECTIONS ^ to_bits(d)));  // clear connection
                 }
-            } else if (neighbourCluster) {  // I have fixed connections -> adapt neighbour
+            } else if (neighbourCluster) {  // I have fixed connections -> adapt neighbor
                 if (getConnections() & to_bits(d))
                     neighbour->setAttr("$connections",
                                        neighbour->getConnections() | to_bits(reverse(d)));
@@ -204,7 +203,7 @@ void Stone::autoJoinCluster() {
                     neighbour->setAttr("$connections", neighbour->getConnections() &
                                                            (ALL_DIRECTIONS ^ to_bits(reverse(d))));
             }
-        } else if (myCluster) {  // no neighbour -> no connection
+        } else if (myCluster) {  // no neighbor -> no connection
             setAttr("$connections",
                     getConnections() & (ALL_DIRECTIONS ^ to_bits(d)));  // clear connection
         }
@@ -246,7 +245,7 @@ FreezeStatusBits Stone::get_freeze_bits(GridPos p) {
 bool Stone::freeze_check() {
     GridPos this_pos = this->get_pos();
     // Check if stone and floor ask for freeze_check
-    if (!to_bool(this->getAttr("freeze_check")))
+    if (!this->getAttr("freeze_check").toBool())
         return false;
     if (freeze_check_running)
         return false;
@@ -276,7 +275,7 @@ bool Stone::freeze_check() {
     //
     // Second block: $$  Each of the "$" can be movable or persistent.
     //               $$  Centered at one of them, there are again four
-    //                   different orientation.
+    //                   different orientations.
     //
     // Third block: #$   This pattern has eight orientations: Fix one of
     //               $#  the boxes. The adjacent persistent stone has four

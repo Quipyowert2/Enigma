@@ -20,47 +20,48 @@
 
 #include "ecl_math.hh"
 
-namespace display {
+namespace enigma::display {
 
 class DisplayEngine;
 
 // Base class for different kinds of sprite followers.
 class Follower {
 public:
-    Follower(DisplayEngine *e);
-    virtual ~Follower() {}
+    explicit Follower(DisplayEngine *engine);
+    virtual ~Follower() = default;
 
     // This function is called by the display engine during each screen
-    // update. 'dtime' is the time since the last frame in seconds and point
+    // update. 'dtime' is the elapsed time since the last frame in seconds, and 'point'
     // is the position of the sprite that is being followed.
     virtual void tick(double dtime, const ecl::V2 &point) = 0;
 
     virtual void center(const ecl::V2 &point);
 
-    void set_boundary(double b) {
-        m_boundary_x = b;
-        m_boundary_y = b;
+    double getBorderX() const { return borderX; }
+    double getBorderY() const { return borderY; }
+
+    void setBorder(double borderX_, double borderY_) {
+        borderX = borderX_;
+        borderY = borderY_;
     }
 
 protected:
-    DisplayEngine *get_engine() const { return m_engine; }
-    bool set_offset(ecl::V2 offs);
+    DisplayEngine *getEngine() const { return engine; }
+    bool setOffset(ecl::V2 offset);
     double get_hoff() const;
     double get_voff() const;
-    ecl::V2 get_scrollpos(const ecl::V2 &point);
-
-    double m_boundary_x;
-    double m_boundary_y;
 
 private:
-    DisplayEngine *m_engine;
+    double borderX;
+    double borderY;
+    DisplayEngine *engine;
 };
 
 // Follows a sprite by flipping to the next screen as soon as the sprite
 // reaches the border of the current screen.
 class Follower_Screen : public Follower {
 public:
-    Follower_Screen(DisplayEngine *e, double borderx = 0.5, double bordery = 0.5);
+    explicit Follower_Screen(DisplayEngine *engine, double borderX = 0.5, double borderY = 0.5);
     void tick(double dtime, const ecl::V2 &point) override;
 };
 
@@ -68,16 +69,16 @@ public:
 // soon as the sprite reaches the border of the current screen.
 class Follower_Scrolling : public Follower {
 public:
-    Follower_Scrolling(DisplayEngine *e, bool screenwise, double borderx = 0.5,
-                       double bordery = 0.5);
+    Follower_Scrolling(
+            DisplayEngine* engine, bool screenWise, double borderX = 0.5, double borderY = 0.5);
     void tick(double dtime, const ecl::V2 &point) override;
     void center(const ecl::V2 &point) override;
 
 private:
-    bool currently_scrolling;
+    bool currentlyScrolling;
     ecl::V2 curpos, destpos;
     ecl::V2 dir;
-    double scrollspeed;
+    double scrollSpeed;
     double resttime;
     bool screenwise;
 };
@@ -85,14 +86,13 @@ private:
 // Follows a sprite by keeping it centered on the screen at all times.
 class Follower_Smooth : public Follower {
 public:
-    Follower_Smooth(DisplayEngine *e);
+    explicit Follower_Smooth(DisplayEngine *engine);
     void tick(double time, const ecl::V2 &point) override;
     void center(const ecl::V2 &point) override;
-    virtual void set_boundary(double /*b*/) {}
 
-    ecl::V2 calc_offset(const ecl::V2 &point);
+    ecl::V2 calcOffset(const ecl::V2 &point);
 };
 
-}  // namespace display
+} // namespace enigma::display
 
 #endif  // ENIGMA_D_FOLLOWER_HH_INCLUDED

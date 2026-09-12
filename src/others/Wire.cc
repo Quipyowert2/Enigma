@@ -23,7 +23,7 @@
 #include "world.hh"
 
 namespace enigma {
-    Wire::Wire() : Other(), anchor1 (NULL), anchor2 (NULL), model (NULL) {
+    Wire::Wire() : Other(), anchor1 (nullptr), anchor2 (nullptr), model (nullptr) {
     }
     
     std::string Wire::getClass() const {
@@ -33,14 +33,14 @@ namespace enigma {
     void Wire::setAttr(const std::string &key, const Value &val) {
         if (key == "anchor1") {
             Stone *old = anchor1;
-            anchor1 = dynamic_cast<Stone *>((Object *)val);
-            ASSERT(anchor1 != NULL, XLevelRuntime, "Wire: 'anchor1' is no stone");
+            anchor1 = dynamic_cast<Stone *>(val.toObject());
+            ASSERT(anchor1 != nullptr, XLevelRuntime, "Wire: 'anchor1' is no stone");
             ASSERT(anchor1 != anchor2, XLevelRuntime, "Wire: 'anchor1' is identical to 'anchor2'");
             switchAnchor(old, anchor1, anchor2);
         } else if (key == "anchor2") {
             Stone * old = anchor2;
-            anchor2 = dynamic_cast<Stone *>((Object *)val);
-            ASSERT(anchor2 != NULL, XLevelRuntime, "Wire: 'anchor2' is no stone");
+            anchor2 = dynamic_cast<Stone *>(val.toObject());
+            ASSERT(anchor2 != nullptr, XLevelRuntime, "Wire: 'anchor2' is no stone");
             ASSERT(anchor2 != anchor1, XLevelRuntime, "Wire: 'anchor1' is identical to 'anchor2'");
             switchAnchor(old, anchor2, anchor1);
         }
@@ -66,35 +66,36 @@ namespace enigma {
 
     void Wire::postAddition() {
 //        model = display::AddRubber(anchor1->getOwnerPos().center(), anchor2->getOwnerPos().center(), 100, 255, 30, true);    // lime
-        model = display::AddRubber(anchor1->getOwnerPos().center(), anchor2->getOwnerPos().center(), 200, 50, 150, true);    // purple
+        model = display::AddRubber(anchor1->getOwnerPos().center(), anchor2->getOwnerPos().center(),
+                200, 50, 150, true); // purple
     }
     
     void Wire::preRemoval() {
         model.kill();
-        switchAnchor(anchor1, NULL, anchor2);
-        switchAnchor(anchor2, NULL, anchor1);        
+        switchAnchor(anchor1, nullptr, anchor2);
+        switchAnchor(anchor2, nullptr, anchor1);
     }
     
     void Wire::tick(double dt) {  // TODO maybe we should let the stones inform the wires on every move
-        model.update_first(anchor1->getOwnerPos().center());
-        model.update_second(anchor2->getOwnerPos().center());
+        model.setStartPoint(anchor1->getOwnerPos().center());
+        model.setEndPoint(anchor2->getOwnerPos().center());
     }
     
     
     void Wire::switchAnchor(Object *oldAnchor, Object *newAnchor, Object *otherAnchor) {
-        if (oldAnchor != NULL) {
-            ObjectList olist = oldAnchor->getAttr("wires");
+        if (oldAnchor != nullptr) {
+            ObjectList olist = oldAnchor->getAttr("wires").toObjectList();
             olist.remove(this);
             oldAnchor->setAttr("wires", olist);
-            if (otherAnchor != NULL) {
+            if (otherAnchor != nullptr) {
                 // remove both anchors from each others fellows list
-                olist = oldAnchor->getAttr("fellows");
+                olist = oldAnchor->getAttr("fellows").toObjectList();
                 ObjectList::iterator it = find(olist.begin(), olist.end(), otherAnchor);
                 if (it != olist.end()) {
                     olist.erase(it);
                 }
                 oldAnchor->setAttr("fellows", olist);
-                olist = otherAnchor->getAttr("fellows");
+                olist = otherAnchor->getAttr("fellows").toObjectList();
                 it = find(olist.begin(), olist.end(), oldAnchor);
                 if (it != olist.end()) {
                     olist.erase(it);
@@ -102,30 +103,35 @@ namespace enigma {
                 otherAnchor->setAttr("fellows", olist);
             }            
         }
-        if (newAnchor != NULL) {
-            ObjectList olist = newAnchor->getAttr("wires");
+        if (newAnchor != nullptr) {
+            ObjectList olist = newAnchor->getAttr("wires").toObjectList();
             olist.push_back(this);
             newAnchor->setAttr("wires", olist);
-            if (otherAnchor != NULL) {
+            if (otherAnchor != nullptr) {
                 // add both anchors to each others fellows list
-                olist = newAnchor->getAttr("fellows");
-                ObjectList::iterator it = find(olist.begin(), olist.end(), otherAnchor);
-                if (it != olist.end()) {
+                olist = newAnchor->getAttr("fellows").toObjectList();
+                if (ObjectList::iterator it = find(olist.begin(), olist.end(), otherAnchor);
+                        it != olist.end()) {
                     // we are a replacement wire for an already existing wire - remove it
-                    olist = newAnchor->getAttr("wires");
-                    for (ObjectList::iterator itr = olist.begin(); itr != olist.end(); ++itr) {
+                    olist = newAnchor->getAttr("wires").toObjectList();
+                    for (auto itr = olist.begin(); itr != olist.end(); ++itr) {
                         Wire *w = dynamic_cast<Wire *>(*itr);
-                        if (w != NULL && (((Object *)(w->getAttr("anchor1")) == newAnchor &&  (Object *)(w->getAttr("anchor2")) == otherAnchor)
-                                || ((Object *)(w->getAttr("anchor2")) == newAnchor &&  (Object *)(w->getAttr("anchor1")) == otherAnchor)))
+                        if (w == nullptr)
+                            continue;
+                        Object* w_anchor1 = w->getAttr("anchor1").toObject();
+                        Object* w_anchor2 = w->getAttr("anchor2").toObject();
+                        if (w_anchor1 == newAnchor && w_anchor2 == otherAnchor
+                                || w_anchor2 == newAnchor && w_anchor1 == otherAnchor) {
                             KillOther(w);
                             break;
+                        }
                     }
                     // reload fellows
-                    olist = newAnchor->getAttr("fellows");
+                    olist = newAnchor->getAttr("fellows").toObjectList();
                 }
                 olist.push_back(otherAnchor);
                 newAnchor->setAttr("fellows", olist);
-                olist = otherAnchor->getAttr("fellows");
+                olist = otherAnchor->getAttr("fellows").toObjectList();
                 olist.push_back(newAnchor);
                 otherAnchor->setAttr("fellows", olist);
             }

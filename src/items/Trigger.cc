@@ -35,7 +35,7 @@ namespace enigma {
     Value Trigger::message (const Message &m) {
         if (m.message == "signal" && (server::GameCompatibility != GAMET_ENIGMA ||
                 server::EnigmaCompatibility < 1.10)) {
-            performAction(m.value.to_bool());  // convert 1/0 values to true/false
+            performAction(m.value.toBool());  // convert 1/0 values to true/false
             return Value();
         } else if (m.message == "_init") {
             // the state count at init is wrong as some actors on the grid may
@@ -48,17 +48,17 @@ namespace enigma {
             int theid = getId();
             updateIState(countActors(),
                     server::EnigmaCompatibility >= 1.10 || server::GameCompatibility != GAMET_ENIGMA);
-            if (Object::getObject(theid) != NULL)   // not killed?
+            if (Object::getObject(theid) != nullptr)   // not killed?
                 init_model();
             return Value();
         } else if (m.message == "_jumping" ) {
-            updateIState(m.value.to_bool() ? -1 : +1);
+            updateIState(m.value.toBool() ? -1 : +1);
         } else if (m.message == "_dying" ) {
             Actor *ac = dynamic_cast<Actor *>(m.sender);
-            if (ac != NULL) {
-                if (m.value.to_bool() && !ac->is_flying())
+            if (ac != nullptr) {
+                if (m.value.toBool() && !ac->is_flying())
                     updateIState(-1);
-                else if (!m.value.to_bool())
+                else if (!m.value.toBool())
                     updateIState(+1);
             }
         }
@@ -77,12 +77,12 @@ namespace enigma {
         state = 0;
         int theid = getId();
         updateIState(countActors(), true);
-        if (Object::getObject(theid) != NULL)   // not killed?
+        if (Object::getObject(theid) != nullptr)   // not killed?
             init_model();
     }
 
     void Trigger::init_model() {
-        if (getAttr("invisible").to_bool())
+        if (getAttr("invisible").toBool())
             set_model("invisible");
         else if (state != 0)
             set_model("it_trigger_down");
@@ -120,7 +120,7 @@ namespace enigma {
 
         Stone *st = GetStone(get_pos());
         state &= ~1;  // delete stone pressure bit
-        if (st != NULL && (!st->is_floating() || st->getClass() == "st_puzzle")) {
+        if (st != nullptr && (!st->is_floating() || st->getClass() == "st_puzzle")) {
             // Hack to make hollow puzzle stones press triggers
             state |= 1;   // add stone pressure bit
         }

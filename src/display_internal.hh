@@ -9,7 +9,7 @@
 #include <list>
 #include <memory>
 
-namespace display {
+namespace enigma::display {
 
 class DisplayLayer;
 class Model;
@@ -20,10 +20,10 @@ typedef std::list<Model *> ModelList;
 
 class Window {
 public:
-    Window() {}
-    Window(ScreenArea area) : m_area(std::move(area)) {}
+    Window() = default;
+    explicit Window(ScreenArea area) : m_area(area) {}
 
-    const ScreenArea &get_area() const { return m_area; }
+    const ScreenArea &getArea() const { return m_area; }
 
 private:
     ScreenArea m_area;
@@ -31,76 +31,78 @@ private:
 
 class TextDisplay {
 public:
-    TextDisplay(ecl::Font &f);
+    explicit TextDisplay(ecl::Font &font);
 
-    void set_text(const std::string &t, bool scrolling, double duration = -1);
+    void setText(const std::string &newText, bool scrolling, double duration = -1);
 
     void tick(double dtime);
-    bool has_changed() const { return changedp; }
-    bool has_finished() const { return finishedp; }
+    bool hasChanged() const { return changed; }
+    bool hasFinished() const { return finished; }
 
     void draw(ecl::GC &gc, const ecl::Rect &r);
 
 private:
     ecl::Rect area;
     std::string text;
-    bool changedp, finishedp;
-    bool pingpong;
-    bool showscroll;
-    double xoff;
-    double scrollspeed;  // pixels per second
-    std::unique_ptr<ecl::Surface> textsurface;
+    bool changed = false, finished = true;
+    bool pingpong = false;
+    bool showscroll = false;
+    double xoff = 0;
+    double scrollSpeed;  // pixels per second
+    std::unique_ptr<ecl::Surface> textSurface = nullptr;
     ecl::Font &font;
-    double time, maxtime;
+    double time = 0, maxtime = 0;
 };
 
 class StatusBarImpl : public StatusBar, public Window {
 public:
-    StatusBarImpl(const ScreenArea &area);
-    ~StatusBarImpl();
+    explicit StatusBarImpl(const ScreenArea &area);
+    ~StatusBarImpl() override;
 
-    bool has_changed() const { return m_changedp; }
+    bool hasChanged() const { return changed; }
     void redraw(ecl::GC &gc, const ScreenArea &r);
     void tick(double dtime);
-    void new_world();
+    void newWorld();
 
     // StatusBar interface.
-    void set_time(double time) override;
-    void set_inventory(enigma::Player activePlayer, const std::vector<std::string> &modelnames) override;
-    void show_text(const std::string &str, bool scrolling, double duration) override;
-    void hide_text() override;
+    void setTime(double time) override;
+    void setInventory(Player activePlayer, const std::vector<std::string> &modelNames) override;
+    void showText(const std::string &str, bool scrolling, double duration) override;
+    void hideText() override;
 
-    void show_move_counter(bool active) override;
+    void showMoveCounter(bool active) override;
     void setCMode(bool flag) override;
     void setBasicModes(std::string flags) override;
 
-    void set_speed(double speed) override;
-    void set_travelled_distance(double distance) override;
-    void set_counter(int new_counter) override;
+    void setSpeed(double speed) override;
+    void setTravelledDistance(double distance) override;
+    void setCounter(int newCounter) override;
 
 private:
-    ScreenArea m_itemarea;
-    std::vector<Model *> m_models;
-    enigma::Player player;
-    bool m_changedp;
-    TextDisplay m_textview;
+    ScreenArea itemArea;
+    std::vector<std::unique_ptr<Model>> itemModels;
+    Player player = YIN;
+    bool changed = false;
+    TextDisplay textDisplay;
+    ecl::Font *timeFont = nullptr;
+    ecl::Font *movesFont = nullptr;
+    ecl::Font *modesFont = nullptr;
 
-    double m_leveltime;
-    bool m_showtime_p;
-    int m_counter;
-    bool m_showcounter_p;
-    bool m_interruptible;  // Current text message may be interrupted
-    bool m_text_active;
-    bool cMode;  // collision mode flag
-    int playerImage;
-    double playerImageDuration;
+    double levelTime = 0; ///< Elapsed time in seconds
+    bool showTime = true;
+    int moveCounter = 0;
+    bool showMoves = false;
+    bool interruptible = true;  // Current text message may be interrupted
+    bool textActive = false;
+    bool cMode = false;  // collision mode flag
+    int playerImage = 0;
+    double playerImageDuration = 0;
     std::string basicModes;  // set by world on start of level
-    int widthDigit[10];
-    int widthColon;
-    int widthApos;
-    int widthQuote;
-    int maxWidthDigit;
-    bool widthInit;
+    int widthDigit[10] = {};
+    int widthColon = 0;
+    int widthApos = 0;
+    int widthQuote = 0;
+    int maxWidthDigit = 0;
 };
 
 }  // namespace display

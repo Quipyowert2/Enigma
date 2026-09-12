@@ -17,27 +17,26 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 #include "ecl_font.hh"
+
 #include "ecl_geom.hh"
 #include "ecl_utf.hh"
 #include "ecl_video.hh"
-#include <vector>
-#include <string>
-#include <memory>
-#include <stdio.h>
-#include <cstdlib>
-#include <ostream>
+#include "SDL_ttf.h"
+
+#include <cstdio>
 #include <iostream>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <vector>
 
-#include <config.h>
+namespace ecl {
 
-using namespace ecl;
-using namespace std;
-
-std::string ecl::normalizeSpaces(std::string theString) {
+std::string normalizeSpaces(const std::string& text) {
     std::string result;
     int state = 0;
     // TODO: This might fail for general UTF-8 encoding!
-    for(char &c : theString) {
+    for (char c : text) {
         if(std::isspace(c)) {
             state *= state;
         } else {
@@ -49,39 +48,39 @@ std::string ecl::normalizeSpaces(std::string theString) {
     return result;
 }
 
-std::string::size_type ecl::breakString(Font *font, const std::string &str,
-                                        const std::string &breakChars, int targetWidth) {
-    if (font->get_width(str) <= targetWidth)
-        return str.size();  // the complete string fits into a line
+std::string::size_type breakString(
+        Font* font, const std::string& text, const std::string& breakChars, int targetWidth) {
+    if (font->get_width(text) <= targetWidth)
+        return text.size();  // the complete string fits into a line
 
     bool breakFound = false;
     std::string::size_type pos = 0;
     while (true) {
-        std::string::size_type nextpos = str.find_first_of(breakChars, pos);
+        std::string::size_type nextPos = text.find_first_of(breakChars, pos);
 
-        if (nextpos == std::string::npos)
+        if (nextPos == std::string::npos)
             // no more line breaks
-            return breakFound ? pos : str.size();
+                return breakFound ? pos : text.size();
 
-        if (font->get_width(str.substr(0, nextpos + 1)) > targetWidth)
+        if (font->get_width(text.substr(0, nextPos + 1)) > targetWidth)
             // now the string is too long
-            return breakFound ? pos : nextpos + 1;
+                return breakFound ? pos : nextPos + 1;
 
-        pos = nextpos + 1;
+        pos = nextPos + 1;
         breakFound = true;
     }
 }
 
-std::vector<std::string> ecl::breakToLines(Font *font, const std::string &str,
-                                   const std::string &breakChars, int targetWidth) {
+std::vector<std::string> breakToLines(
+        Font* font, const std::string& text, const std::string& breakChars, int targetWidth) {
     std::vector<std::string> lines;
-    if (str.size() == 0)
+    if (text.empty())
         return lines;
-    std::string::size_type breakPos = breakString(font, str, breakChars, targetWidth);
-    lines = breakToLines(font, str.substr(breakPos), breakChars, targetWidth);
-    if ((breakPos > 0) && (str.substr(breakPos-1,1) == " "))
+    std::string::size_type breakPos = breakString(font, text, breakChars, targetWidth);
+    lines = breakToLines(font, text.substr(breakPos), breakChars, targetWidth);
+    if (breakPos > 0 && text.substr(breakPos - 1, 1) == " ")
         breakPos -= 1;
-    lines.insert(lines.begin(), str.substr(0, breakPos).c_str());
+    lines.insert(lines.begin(), text.substr(0, breakPos).c_str());
     return lines;
 }
 
@@ -90,29 +89,31 @@ std::vector<std::string> ecl::breakToLines(Font *font, const std::string &str,
 //
 
 namespace {
-class InvalidFont {};
 
-class BitmapFont : public Font {
-    vector<Rect> char_rects;
-    vector<int> advance;
-    Surface *surface;
+    class BitmapFont : public Font {
+        std::vector<Rect> charRects;
+        std::vector<int> advance;
+        std::unique_ptr<Surface> surface;
 
-public:
-    BitmapFont(Surface *s, const char *descr);
-    ~BitmapFont() { delete surface; }
+    public:
+        BitmapFont(std::unique_ptr<Surface> s, const char* descr);
+        ~BitmapFont() override = default;
 
-    int get_lineskip() { return surface->height() + 3; }
-    int get_width(char c);
-    virtual int get_width(std::string text, Font *altFont = NULL);
-    int get_height();
+        int get_lineskip() override { return surface->height() + 3; }
+        int get_width(char c) override;
+        int get_width(const std::string& text, Font* altFont = nullptr) override;
+        int get_height() override;
 
-    virtual Surface *render(std::string text, Font *altFont = nullptr, int maxwidth = -1);
-    virtual void render(const GC &gc, int x, int y, std::string text, Font *altFont = NULL,
-                        int maxwidth = -1);
-};
-}
+        std::unique_ptr<Surface> render(
+                const std::string& text, Font* altFont = nullptr, int maxWidth = -1) override;
+        void render(const GC& gc, int x, int y, const std::string& text, Font* altFont = nullptr,
+                int maxWidth = -1) override;
+    };
 
-BitmapFont::BitmapFont(Surface *s, const char *descr) : char_rects(256), advance(256), surface(s) {
+}  // namespace
+
+BitmapFont::BitmapFont(std::unique_ptr<Surface> s, const char* descr)
+    : charRects(256), advance(256), surface(std::move(s)) {
     // Read and interpret the font description file.
     // expected line format:
     // charno xpos width xadvance
@@ -124,10 +125,10 @@ BitmapFont::BitmapFont(Surface *s, const char *descr) : char_rects(256), advance
     int c;
     int x = 0, w = 0, adv = 0;
     while (fscanf(fp, "%d %d %d %d\n", &c, &x, &w, &adv) != EOF) {
-        char_rects[c].x = x;
-        char_rects[c].w = w;
-        char_rects[c].y = 0;
-        char_rects[c].h = s->height();
+        charRects[c].x = x;
+        charRects[c].w = w;
+        charRects[c].y = 0;
+        charRects[c].h = surface->height();
         advance[c] = adv;
         if (adv == 0)
             std::cout << "BitFont 0\n";
@@ -138,14 +139,14 @@ int BitmapFont::get_width(char c) {
     return advance[int(c)];
 }
 
-int BitmapFont::get_width(std::string text, Font *altFont) {
+int BitmapFont::get_width(const std::string &text, Font *altFont) {
     int width = 0;
     const char *cstr = text.c_str();
     for (const char *p = cstr; *p; ++p) {
         // utf-8 char handling
         int len = utf8NextCharSize(p);  // num of bytes that represents one real character
         if (len == 0) {
-            // a spurious follow up byte
+            // a spurious follow-up byte
             continue;
         }
 
@@ -166,8 +167,8 @@ int BitmapFont::get_height() {
     return surface->height();
 }
 
-Surface *BitmapFont::render(std::string text, Font *altFont, int maxwidth) {
-    Surface *s = MakeSurface(get_width(text, altFont), get_height());
+std::unique_ptr<Surface> BitmapFont::render(const std::string& text, Font *altFont, int maxWidth) {
+    std::unique_ptr<Surface> s = MakeSurface(get_width(text, altFont), get_height());
     s->set_color_key(0, 0, 0);
     int width = 0;
     int x = 0;
@@ -176,7 +177,7 @@ Surface *BitmapFont::render(std::string text, Font *altFont, int maxwidth) {
         // utf-8 char handling
         int len = utf8NextCharSize(p);  // num of bytes that represents one real character
         if (len == 0) {
-            // a spurious follow up byte
+            // a spurious follow-up byte
             continue;
         }
 
@@ -185,8 +186,8 @@ Surface *BitmapFont::render(std::string text, Font *altFont, int maxwidth) {
                 std::string utf8char(p, len);
                 int charWidth = altFont->get_width(utf8char);
                 width += charWidth;
-                if (maxwidth <= 0 || width < maxwidth) {
-                    altFont->render(GC(s), x, 1, utf8char);
+                if (maxWidth <= 0 || width < maxWidth) {
+                    altFont->render(GC(s.get()), x, 1, utf8char);
                     x += altFont->get_width(utf8char);
                 }
             }
@@ -194,8 +195,8 @@ Surface *BitmapFont::render(std::string text, Font *altFont, int maxwidth) {
         } else {
             int charWidth = get_width(*p);
             width += charWidth;
-            if (maxwidth <= 0 || width <= maxwidth) {
-                blit(GC(s), x, 0, surface, char_rects[int(*p)]);
+            if (maxWidth <= 0 || width <= maxWidth) {
+                blit(GC(s.get()), x, 0, surface.get(), charRects[int(*p)]);
                 x += charWidth;
             }
         }
@@ -203,51 +204,51 @@ Surface *BitmapFont::render(std::string text, Font *altFont, int maxwidth) {
     return s;
 }
 
-void BitmapFont::render(const GC &gc, int x, int y, std::string text, Font *altFont, int maxwidth) {
-    Surface *s = render(text, altFont, maxwidth);
-    blit(gc, x, y, s);
-    delete s;
+void BitmapFont::render(
+        const GC& gc, int x, int y, const std::string& text, Font* altFont, int maxWidth) {
+    std::unique_ptr<Surface> s = render(text, altFont, maxWidth);
+    blit(gc, x, y, s.get());
 }
 
-Font *ecl::LoadBitmapFont(const char *imgname, const char *descrname) {
-    if (Surface *s = LoadImage(imgname))
-        return new BitmapFont(s, descrname);
-    return 0;
+std::unique_ptr<Font> LoadBitmapFont(const char *imgname, const char *descrname) {
+    if (std::unique_ptr<Surface> s = LoadImage(imgname))
+        return std::make_unique<BitmapFont>(std::move(s), descrname);
+    return nullptr;
 }
 
 //
 // TrueType fonts
 //
-#include "SDL_ttf.h"
 
 namespace {
 
-class TrueTypeFont : public Font {
-    // Variables
-    TTF_Font *font;
-    SDL_Color fgcolor;
+    class TrueTypeFont : public Font {
+        // Variables
+        TTF_Font *font;
+        SDL_Color fgcolor;
 
-    // Inhibit copying
-    TrueTypeFont(const TrueTypeFont &);
-    TrueTypeFont &operator=(const TrueTypeFont &);
+    public:
+        TrueTypeFont(TTF_Font *font_, int r, int g, int b);
 
-public:
-    TrueTypeFont(TTF_Font *font_, int r, int g, int b);
+        // Inhibit copying
+        TrueTypeFont(const TrueTypeFont &) = delete;
+        TrueTypeFont &operator=(const TrueTypeFont &) = delete;
 
-    ~TrueTypeFont();
+        ~TrueTypeFont() override;
 
-    // Font interface
-    int get_lineskip();
-    int get_height();
-    int get_width(char c);
-    virtual int get_width(std::string text, Font *altFont = NULL);
+        // Font interface
+        int get_lineskip() override;
+        int get_height() override;
+        int get_width(char c) override;
+        int get_width(const std::string& text, Font *altFont = nullptr) override;
 
-    Surface *render(std::string text, Font *altFont = nullptr, int maxwidth = -1);
-    void render(const GC &gc, int x, int y, std::string text, Font *altFont = nullptr, int maxwidth = -1);
+        std::unique_ptr<Surface> render(
+                const std::string& text, Font *altFont = nullptr, int maxWidth = -1);
+        void render(const GC &gc, int x, int y, const std::string& text, Font *altFont = nullptr, int maxWidth = -1) override;
 
-private:
-    SDL_PixelFormat *pixel_format;
-};
+    private:
+        SDL_PixelFormat *pixel_format;
+    };
 
 }  // namespace
 
@@ -276,9 +277,10 @@ int TrueTypeFont::get_width(char c) {
     return advance;
 }
 
-Surface *TrueTypeFont::render(std::string text, Font *altFont, int maxwidth) {
+std::unique_ptr<Surface> TrueTypeFont::render(
+        const std::string& text, Font *altFont, int maxWidth) {
     // Note: altFont is only used by BitmapFont.
-    // TODO: Implement maxwidth. (Not actually used right now.)
+    // TODO: Implement maxWidth. (Not actually used right now.)
     SDL_Color bgcolor = {0, 0, 0, 0};
     SDL_Surface *si = TTF_RenderUTF8_Shaded(font, text.c_str(), fgcolor, bgcolor);
     if (si) {
@@ -290,23 +292,25 @@ Surface *TrueTypeFont::render(std::string text, Font *altFont, int maxwidth) {
     return MakeSurface(0, get_height());
 }
 
-void TrueTypeFont::render(const GC &gc, int x, int y, std::string text, Font *altFont, int maxwidth) {
-    std::unique_ptr<Surface> s(render(text, altFont, maxwidth));
-    if (s.get())
-        blit(gc, x, y, s.get());
+void TrueTypeFont::render(const GC &gc, int x, int y, const std::string& text, Font *altFont, int maxWidth) {
+    std::unique_ptr<Surface> surface(render(text, altFont, maxWidth));
+    if (surface)
+        blit(gc, x, y, surface.get());
 }
 
-int TrueTypeFont::get_width(std::string text, Font *altFont) {
-    int w, h;
-    TTF_SizeUTF8(font, text.c_str(), &w, &h);
-    return w;
+int TrueTypeFont::get_width(const std::string& text, Font *altFont) {
+    int width, height;
+    TTF_SizeUTF8(font, text.c_str(), &width, &height);
+    return width;
 }
 
-Font *ecl::LoadTTF(const char *filename, int ptsize, int r, int g, int b) {
+std::unique_ptr<Font> LoadTTF(const char *filename, int ptSize, int r, int g, int b) {
     if (!TTF_WasInit() && TTF_Init() == -1) {
         fprintf(stderr, "Couldn't initialize SDL_ttf: %s\n", SDL_GetError());
         exit(1);
     }
-    TTF_Font *font = TTF_OpenFont(filename, ptsize);
-    return (font) ? new TrueTypeFont(font, r, g, b) : 0;
+    TTF_Font *font = TTF_OpenFont(filename, ptSize);
+    return font ? std::make_unique<TrueTypeFont>(font, r, g, b) : nullptr;
 }
+
+} // namespace ecl

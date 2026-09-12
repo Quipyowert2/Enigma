@@ -38,15 +38,15 @@ namespace enigma {
 
     void RotorBase::setAttr(const std::string& key, const Value &val) {
         if (key == "range")
-            range = val;
+            range = val.toDouble();
         else if (key == "strength") 
-            force = val;
+            force = val.toDouble();
         else if (key == "gohome") 
-            gohome = val.to_bool();
+            gohome = val.toBool();
         else if (key == "attacknearest")
-            attacknearest = val.to_bool();
+            attacknearest = val.toBool();
         else if (key == "prefercurrent") 
-            prefercurrent = val;
+            prefercurrent = val.toDouble();
         Actor::setAttr(key, val);
     }
 
@@ -69,9 +69,9 @@ namespace enigma {
                 1 << ac_marble_white | 1 << ac_marble_black | 1 << ac_marble_glass
               | 1 << ac_pearl_white  | 1 << ac_pearl_black);
         Actor *a;
-        while((a = air_it.next()) != NULL) {
+        while((a = air_it.next()) != nullptr) {
             if (a->is_movable() && !a->is_invisible()) {
-                ecl::V2 v = a->get_pos() - get_pos();
+                ecl::V2 v = a->getPos() - getPos();
                 if ((attacknearest && !attackCurrentOnly) ||
                     (attackCurrentOnly && a == player::GetMainActor(
                      player::CurrentPlayer()))) {
@@ -88,14 +88,14 @@ namespace enigma {
     
         if (!target && gohome) { 
             // no actors focussed -> return to start position
-            target_vec = get_respawnpos()-get_pos();
+            target_vec = getRespawnPos()-getPos();
         }
     
         double target_dist = length(target_vec);
     
         if (target_dist > 0.2)
             target_vec.normalize();
-        add_force(target_vec * cforce);
+        addForce(target_vec * cforce);
     
         Actor::think(dtime);
     }

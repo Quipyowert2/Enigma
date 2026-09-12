@@ -47,16 +47,16 @@ namespace enigma {
 
         // The attribute "scissor" defines, if when using the it_rubberband,
         // other rubberbands to the actor will be cut of or not.
-        bool isScissor = to_bool(getAttr("scissor"));
+        bool isScissor = getAttr("scissor").toBool();
         if (isScissor)
             SendMessage(a, "disconnect");
 
         sound_event("rubberband");
 
         bool alreadyConnected = false;
-        ObjectList rubbers = a->getAttr("rubbers");
+        ObjectList rubbers = a->getAttr("rubbers").toObjectList();
         for (ObjectList::iterator it =  rubbers.begin(); it != rubbers.end(); ++it) {
-            if (((Object *)(*it)->getAttr("anchor2")) == anchor2) {
+            if ((*it)->getAttr("anchor2").toObject() == anchor2) {
                 alreadyConnected = true;
                 break;
             }
@@ -75,7 +75,7 @@ namespace enigma {
             AddOther(dynamic_cast<Other *>(obj));
             transferIdentity(obj);
             SendMessage(obj, "_performaction");
-            if (Object::getObject(theid) != NULL)   // not killed?
+            if (Object::getObject(theid) != nullptr)   // not killed?
                 SendMessage(obj, "_recheck");
             return ITEM_KILL;
         } else

@@ -38,10 +38,10 @@ namespace enigma {
         return "st_turnstile";
     }
 
-void TurnstilePivot::setAttr(const std::string& key, const Value &val) {
+    void TurnstilePivot::setAttr(const std::string& key, const Value &val) {
         if (key == "flavor") {
-            ASSERT((val.to_string() == "red" || val.to_string() == "green"), XLevelRuntime,
-                    ("Turnstile unknown flavor: " + val.to_string()).c_str());
+            ASSERT((val.toString() == "red" || val.toString() == "green"), XLevelRuntime,
+                    ("Turnstile unknown flavor: " + val.toString()).c_str());
             Stone::setAttr(key, val);
             if (isDisplayable())
                 init_model();
@@ -52,11 +52,11 @@ void TurnstilePivot::setAttr(const std::string& key, const Value &val) {
     Value TurnstilePivot::message(const Message &m) {
         if (m.message == "signal") {               // turn , turnback
             if (isDisplayable())
-                rotate(m.value == 0, NULL, NULL);
+                rotate(m.value == 0, nullptr, nullptr);
             return Value();
         } else if ((m.message == "turn" || m.message == "turnback")) {
-            rotate(((m.message == "turn" && !getAttr("counterclock").to_bool()) ||
-                    (m.message == "turnback" && getAttr("counterclock").to_bool())), NULL, NULL);
+            rotate(((m.message == "turn" && !getAttr("counterclock").toBool()) ||
+                    (m.message == "turnback" && getAttr("counterclock").toBool())), nullptr, nullptr);
             return Value();
         }
         return Stone::message(m);
@@ -71,7 +71,7 @@ void TurnstilePivot::setAttr(const std::string& key, const Value &val) {
     }
 
     void TurnstilePivot::init_model() {
-        set_model(std::string("red") == getAttr("flavor").to_string() ? "st_turnstile" : "st_turnstile_green");
+        set_model(std::string("red") == getAttr("flavor").toString() ? "st_turnstile" : "st_turnstile_green");
     }
 
 
@@ -96,7 +96,7 @@ void TurnstilePivot::setAttr(const std::string& key, const Value &val) {
         GridPos p = get_pos();
         p.x += xoff;
         p.y += yoff;
-        return (NULL == GetStone(p));
+        return (nullptr == GetStone(p));
     }
 
     bool TurnstilePivot::rotate(bool clockwise, Object *impulse_sender, TurnstileArm *initiator) {
@@ -149,11 +149,11 @@ void TurnstilePivot::setAttr(const std::string& key, const Value &val) {
             sound_event("movesmall");
 
             state = ROTATING;
-            set_anim(ecl::strf("st_turnstile%s_anim", (std::string("red") == getAttr("flavor").to_string()) ? "" : "_green"));
+            set_anim(ecl::strf("st_turnstile%s_anim", (std::string("red") == getAttr("flavor").toString()) ? "" : "_green"));
             rotate_arms(arms, clockwise);
             handleActorsAndItems(clockwise, impulse_sender);
 
-            if (Object::getObject(ID) == NULL) // Killed? Then forget the rest.
+            if (Object::getObject(ID) == nullptr) // Killed? Then forget the rest.
                 return can_rotate;
 
             Direction dir = to_direction(getAttr("orientation"));
@@ -178,10 +178,10 @@ void TurnstilePivot::setAttr(const std::string& key, const Value &val) {
     void TurnstilePivot::rotate_arms(DirectionBits arms, bool clockwise) {
         GridPos p = get_pos();
 
-        Object * n = (arms & NORTHBIT) ? YieldStone(move (p, NORTH)) : NULL;
-        Object * e = (arms & EASTBIT)  ? YieldStone(move (p, EAST))  : NULL;
-        Object * s = (arms & SOUTHBIT) ? YieldStone(move (p, SOUTH)) : NULL;
-        Object * w = (arms & WESTBIT)  ? YieldStone(move (p, WEST))  : NULL;
+        Object * n = (arms & NORTHBIT) ? YieldStone(move (p, NORTH)) : nullptr;
+        Object * e = (arms & EASTBIT)  ? YieldStone(move (p, EAST))  : nullptr;
+        Object * s = (arms & SOUTHBIT) ? YieldStone(move (p, SOUTH)) : nullptr;
+        Object * w = (arms & WESTBIT)  ? YieldStone(move (p, WEST))  : nullptr;
 
         if (clockwise) {
             if (arms & NORTHBIT) setArm(n, EAST);
@@ -258,15 +258,15 @@ void TurnstilePivot::setAttr(const std::string& key, const Value &val) {
             if (ac->isMoribund())
                 continue;
 
-            const ecl::V2 &ac_center = ac->get_pos();
+            const ecl::V2 &ac_center = ac->getPos();
             GridPos   ac_pos(ac_center);
             int dx  = ac_pos.x-pv_pos.x;
             int dy  = ac_pos.y-pv_pos.y;
 
-            // ignore if actor is not inside the turnstile square or is not
-            // in distance of the the rotating arms
+            // Ignore if actor is not inside the turnstile square or is not
+            // in distance of the rotating arms.
             if ((dx<-1 || dx>1 || dy<-1 || dy>1) ||
-                    (length(ac->get_pos() - pv_pos.center()) > 1.58114 + ac->get_actorinfo()->radius))
+                    (length(ac->getPos() - pv_pos.center()) > 1.58114 + ac->getRadius()))
                 continue;
 
             int idx_source = to_index[dx+1][dy+1];
@@ -290,7 +290,7 @@ void TurnstilePivot::setAttr(const std::string& key, const Value &val) {
                 { 2,  4, 4,  6, 6,  0, 0,  2 }, // clockwise (oxyd-compatible)
             };
 
-            bool compatible = std::string("red") == getAttr("flavor").to_string();   // oxyd compatibility
+            bool compatible = std::string("red") == getAttr("flavor").toString();   // oxyd compatibility
             int  idx_target = rot_index[clockwise+2*compatible][idx_source]; // destination index
             bool do_warp = false; // move the actor along with the turnstile?
 
@@ -315,12 +315,12 @@ void TurnstilePivot::setAttr(const std::string& key, const Value &val) {
                 continue;
             }
 
-            // Keep the actors rotated position within grid, but ensure that
+            // Keep the actor's rotated position within the grid, but ensure that
             // - actors once warped keep warping on further turnstile turns
             // - small marbles end up in meditation hollows
-            ecl::V2 offset = ac->get_pos() - ac->get_gridpos().center();
-            if (ecl::length(offset) > 0.5 - ac->get_actorinfo()->radius)
-                offset =  (0.5 - ac->get_actorinfo()->radius) * ecl::normalize(offset);
+            ecl::V2 offset = ac->getPos() - ac->get_gridpos().center();
+            if (ecl::length(offset) > 0.5 - ac->getRadius())
+                offset =  (0.5 - ac->getRadius()) * ecl::normalize(offset);
             WarpActor(ac, ac_target_pos.x + 0.5 + (clockwise ? -offset[1] : offset[1]),
                      ac_target_pos.y + 0.5 + (clockwise ? offset[0] : -offset[0]), false);
 
@@ -343,7 +343,7 @@ void TurnstilePivot::setAttr(const std::string& key, const Value &val) {
     }
 
     int TurnstilePivot::traitsIdx() const {
-        return (std::string("red") == getAttr("flavor").to_string()) ? 0 : 1;
+        return (std::string("red") == getAttr("flavor").toString()) ? 0 : 1;
     }
 
     StoneTraits TurnstilePivot::traits[2] = {
@@ -363,10 +363,10 @@ void TurnstilePivot::setAttr(const std::string& key, const Value &val) {
 
 void TurnstileArm::setAttr(const std::string& key, const Value &val) {
         if (key == "orientation") {                // TODO connections support
-            setState(val);
+            setState(val.toInt());
         } else if (key == "connections") {
             GridObject::setAttr(key, val);
-            DirectionBits db = (DirectionBits)(int)getAttr("$connections");
+            DirectionBits db = (DirectionBits)getAttr("$connections").toInt();
             switch (db) {
                 case WESTBIT :
                     state = WEST; break;
@@ -378,7 +378,7 @@ void TurnstileArm::setAttr(const std::string& key, const Value &val) {
                     state = NORTH; break;
                 default :
                     ASSERT(false, XLevelRuntime, ("Turnstile set attribute 'connections' with illegal value '"
-                            + val.to_string() + "'").c_str());
+                            + val.toString() + "'").c_str());
             }
         } else
             Stone::setAttr(key, val);
@@ -421,13 +421,13 @@ void TurnstileArm::setAttr(const std::string& key, const Value &val) {
         int ID = getId();
         TurnstilePivot *pivot = getPivot();
 
-        if (pivot != NULL) {
+        if (pivot != nullptr) {
             ArmAction a = actions[state][impulse.dir];
             if (a != stay) {
                 bool clockwise = (a == ROTR);
                 Actor *actor = dynamic_cast<Actor*>(impulse.sender);
 //                Log << "Turnstile impulse " << get_id(pivot) << " - "<<st_turnstile_green <<"\n";
-                if (get_id(pivot) == st_turnstile_green && actor != NULL &&
+                if (get_id(pivot) == st_turnstile_green && actor != nullptr &&
                         player::WieldedItemIs(actor, "it_wrench")) {
 //                    Log << "Turnstile Wand\n";
                     clockwise = !clockwise;
@@ -440,7 +440,7 @@ void TurnstileArm::setAttr(const std::string& key, const Value &val) {
             move_stone(impulse.dir);
         }
 
-        if (Object::getObject(ID) != NULL)   // not killed - on pivot action?
+        if (Object::getObject(ID) != nullptr)   // not killed - on pivot action?
             propagateImpulse(impulse);
     }
 

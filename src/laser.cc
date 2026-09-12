@@ -150,7 +150,7 @@ bool LaserBeam::actor_hit(Actor *actor) {
     DirectionBits directions = (DirectionBits)(objFlags & 15);
 
 //    double r = get_radius(actor);
-    ecl::V2 p = actor->get_pos();
+    ecl::V2 p = actor->getPos();
     GridPos gp = get_pos();
 
     // distance of actor from center of the grid
@@ -206,7 +206,7 @@ void LaserBeam::all_emitted()
 
     if (count) {
         sound::EmitSoundEvent ("laseron", ecl::V2(x/count+.5, y/count+.5),
-                               GetVolume("laseron", NULL));
+                               GetVolume("laseron", nullptr));
     }
 }
 

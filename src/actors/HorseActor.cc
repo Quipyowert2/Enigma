@@ -56,18 +56,18 @@ namespace enigma {
                 objFlags |= OBJBIT_NEWDEST;
             }
         } else if (key == "destidx") {
-            destidx = val;
+            destidx = val.toInt();
             if (destidx >= 0)
                 objFlags |= OBJBIT_NEWDEST;
             else
                 objFlags &= ~OBJBIT_AUTOMOVE;
         } else if (key == "steady") {
-            if (val.to_bool())
+            if (val.toBool())
                  objFlags |= OBJBIT_STEADY;
             else
                  objFlags &= ~OBJBIT_STEADY;
         } else if (key == "strength") {
-            strength = val;
+            strength = val.toDouble();
             if (strength < 0)
                 objFlags &= ~OBJBIT_AUTOMOVE;
         } else
@@ -86,17 +86,17 @@ namespace enigma {
             updateTarget();
             if (objFlags & OBJBIT_AUTOMOVE) {
                 if (!(objFlags & OBJBIT_STEADY) &&
-                        ecl::square(get_vel()) * 0.6 / strength > ecl::length(target - get_pos()) - 0.05)
-                    add_force(- normalize(get_vel()) * strength);
+                        ecl::square(getVel()) * 0.6 / strength > ecl::length(target - getPos()) - 0.05)
+                    addForce(- normalize(getVel()) * strength);
                 else
-                    add_force(normalize(target - get_pos()) * strength);
+                    addForce(normalize(target - getPos()) * strength);
             }
         }
         Actor::think(dtime);
     }
 
     void Horse::afterStoneBounce(const StoneContact &sc) {
-        if ((objFlags & OBJBIT_AUTOMOVE) && (sc.stonepos == GridPos(target))) {
+        if ((objFlags & OBJBIT_AUTOMOVE) && (sc.stonePos == GridPos(target))) {
             updateTarget(true);
         }
         Actor::afterStoneBounce(sc);
@@ -107,13 +107,13 @@ namespace enigma {
             // target not defined so far
             ASSERT(getDestinationByIndex(destidx, target), XLevelRuntime, "Horse actor missing valid destination");
             objFlags &= ~OBJBIT_NEWDEST;
-        } else if (touched || length(target - get_pos()) < ((objFlags & OBJBIT_STEADY) ? 0.2 : 0.1)) {
+        } else if (touched || length(target - getPos()) < ((objFlags & OBJBIT_STEADY) ? 0.2 : 0.1)) {
             int theid = getId();  // in future user might kill actors on callback
             performAction(true);
             // target reached or? try next one
-            if ((Object::getObject(theid) != NULL)  && (objFlags & OBJBIT_AUTOMOVE) &&
+            if ((Object::getObject(theid) != nullptr)  && (objFlags & OBJBIT_AUTOMOVE) &&
                     !getDestinationByIndex(++destidx, target)) {
-                if (getAttr("loop").to_bool()) {
+                if (getAttr("loop").toBool()) {
                     destidx = 0;     // failed -> start anew
                     getDestinationByIndex(destidx, target);
                 } else

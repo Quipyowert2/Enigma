@@ -25,9 +25,9 @@
 
 namespace enigma
 {
-    bool boolValue(const XMLCh * const string);
-    void stripIgnorableWhitespace(XERCES_CPP_NAMESPACE_QUALIFIER DOMElement * elem);
-    
+    bool boolValue(const XMLCh * string);
+    void stripIgnorableWhitespace(xercesc::DOMElement * elem);
 } //namespace enigma
+
 #endif
 

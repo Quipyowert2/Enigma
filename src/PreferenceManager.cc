@@ -18,40 +18,38 @@
  */
 
 #include "PreferenceManager.hh"
-#include "main.hh"
+
 #include "DOMErrorReporter.hh"
 #include "DOMSchemaResolver.hh"
-#include "LocalToXML.hh"
-#include "nls.hh"
-#include "Utf8ToXML.hh"
-#include "utilXML.hh"
-#include "options.hh"
-#include "XMLtoLocal.hh"
-#include "XMLtoUtf8.hh"
 #include "ecl_system.hh"
 #include "gui/ErrorMenu.hh"
+#include "LocalToXML.hh"
+#include "main.hh"
+#include "nls.hh"
+#include "options.hh"
+#include "Utf8ToXML.hh"
+#include "utilXML.hh"
+#include "XMLtoLocal.hh"
+#include "XMLtoUtf8.hh"
 
 #include <iostream>
 #include <xercesc/dom/DOM.hpp>
-#include <xercesc/util/XMLDouble.hpp>
+#include <xercesc/util/PlatformUtils.hpp>
 #include <xercesc/util/XMLString.hpp>
 #include <xercesc/util/XMLUniDefs.hpp>
-#include <xercesc/util/PlatformUtils.hpp>
-#include <xercesc/util/XercesVersion.hpp>
-#if _XERCES_VERSION < 30000
-#include <xercesc/framework/LocalFileFormatTarget.hpp>
-#endif
 
-
-using namespace std;
-using namespace enigma;
-XERCES_CPP_NAMESPACE_USE 
+using xercesc::DOMDocument;
+using xercesc::DOMElement;
+using xercesc::DOMException;
+using xercesc::DOMNodeList;
+using xercesc::XMLException;
+using xercesc::XMLString;
 
 namespace enigma {
-    PreferenceManager *PreferenceManager::theSingleton = 0;
+    PreferenceManager *PreferenceManager::theSingleton = nullptr;
     
     PreferenceManager* PreferenceManager::instance() {
-        if (theSingleton == 0) {
+        if (theSingleton == nullptr) {
             theSingleton = new PreferenceManager();
         }
         return theSingleton;
@@ -62,7 +60,7 @@ namespace enigma {
         bool haveXMLProperties = ecl::FileExists(app.prefPath);
         
         if (!app.systemFS->findFile( std::string("schemas/") + PREFFILENAME , prefTemplatePath)) {
-            cerr << "Preferences: no template found\n";
+            std::cerr << "Preferences: no template found\n";
             exit(-1);
         }
 
@@ -86,12 +84,12 @@ namespace enigma {
                     DOMElement *tmplProperty = dynamic_cast<DOMElement *>(tmplPropList->item(i));
                     const XMLCh * key = tmplProperty->getAttribute(Utf8ToXML("key").x_str());
                     DOMElement * lastUserProperty;
-                    if ((key[0] != chUnderscore) && !hasProperty(key, &lastUserProperty)) {
+                    if (key[0] != xercesc::chUnderscore && !hasProperty(key, &lastUserProperty)) {
                         // a new property in the template
                         Log << "Preferences: add new Property \"" << XMLtoLocal(key) << "\"\n";
                         // make a copy
-                        DOMNode * newProperty =  doc->importNode(tmplProperty, false);
-                        if (newProperty == NULL) {
+                        xercesc::DOMNode * newProperty =  doc->importNode(tmplProperty, false);
+                        if (newProperty == nullptr) {
                             Log << "Preferences: copy new Property failed!\n";
                         } else {
                             // insert it at the end of the existing user properties
@@ -123,46 +121,40 @@ namespace enigma {
         }
         catch (const XMLException& toCatch) {
             char* message = XMLString::transcode(toCatch.getMessage());
-            cerr << "Exception while loading preferences: "
+            std::cerr << "Exception while loading preferences: "
                  << message << "\n";
             XMLString::release(&message);
             exit (-1);
         }
         catch (const DOMException& toCatch) {
             char* message = XMLString::transcode(toCatch.msg);
-            cerr << "Exception while loading preferences: "
+            std::cerr << "Exception while loading preferences: "
                  << message << "\n";
             XMLString::release(&message);
             exit (-1);
         }
         catch (...) {
-            cerr << "Unexpected exception while loading preferences\n" ;
+            std::cerr << "Unexpected exception while loading preferences\n" ;
             exit (-1);
         }        
     }
      
     PreferenceManager::~PreferenceManager() {
-        if (doc != NULL)
+        if (doc != nullptr)
             shutdown();
     }
     
     bool PreferenceManager::save() {
-        bool result = true;
+        bool result;
         std::string errMessage;
         
-        if (doc == NULL)
+        if (doc == nullptr)
             return true;
 
         stripIgnorableWhitespace(doc->getDocumentElement());
         
         try {
-#if _XERCES_VERSION >= 30000
             result = app.domSer->writeToURI(doc, LocalToXML(& app.prefPath).x_str());
-#else
-            XMLFormatTarget *myFormTarget = new LocalFileFormatTarget(app.prefPath.c_str());
-            result = app.domSer->writeNode(myFormTarget, *doc);            
-            delete myFormTarget;   // flush
-#endif
         } catch (const XMLException& toCatch) {
             errMessage = std::string("Exception on save of preferences: \n") + 
                     XMLtoUtf8(toCatch.getMessage()).c_str() + "\n";
@@ -177,7 +169,7 @@ namespace enigma {
         }
         
         if (!result) {
-            cerr << errMessage;
+            std::cerr << errMessage;
             gui::ErrorMenu m(errMessage, N_("Continue"));
             m.manage();          
         } else
@@ -188,9 +180,9 @@ namespace enigma {
 
     void PreferenceManager::shutdown() {
         save();
-        if (doc != NULL)
+        if (doc != nullptr)
             doc->release();
-        doc = NULL;
+        doc = nullptr;
     }
     
 } // namespace enigma

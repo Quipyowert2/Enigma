@@ -27,11 +27,8 @@
 
 namespace enigma {
 
-class ImageCache : public ecl::PtrCache<ecl::Surface> {
-public:
-    using ecl::PtrCache<ecl::Surface>::store;
-
-    ecl::Surface *acquire(const std::string &name) override {
+class ImageCache : public ecl::Cache<ecl::Surface> {
+    std::unique_ptr<ecl::Surface> acquire(const std::string &name) override {
         return ecl::LoadImage(name.c_str());
     }
 };
@@ -45,7 +42,7 @@ void DefineFont(const char *name, const char *ttf_name, int ttf_size, const char
 ecl::Font *GetFont(const char *name);
 void ClearFontCache();
 
-ecl::Surface *LoadImage(const char *name);
+std::unique_ptr<ecl::Surface> LoadImage(const char *name);
 ecl::Surface *GetImage(const char *name, const char *ext = ".png");
 ecl::Surface *RegisterImage(const char *name, ecl::Surface *s);
 void ClearImageCache();

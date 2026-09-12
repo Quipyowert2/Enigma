@@ -50,7 +50,7 @@ namespace enigma {
         // point of time. The vanishing part is the proxy of the other exchanged stone.
         // Thus it inherits the floating behaviour from it. 
         return (state == VANISHING && 
-                (yieldedStone == NULL || yieldedStone->is_floating())); 
+                (yieldedStone == nullptr || yieldedStone->is_floating()));
     }
     
     bool PullStone::is_sticky(const Actor *a) const {
@@ -66,7 +66,7 @@ namespace enigma {
         // point of time. The vanishing part is the proxy of the other exchanged stone.
         // Thus it inherits the transparency behaviour from it. 
         return (state != VANISHING || 
-                (yieldedStone != NULL && yieldedStone->is_transparent(d))); 
+                (yieldedStone != nullptr && yieldedStone->is_transparent(d)));
     }
     
     void PullStone::on_impulse(const Impulse& impulse) {
@@ -106,36 +106,36 @@ namespace enigma {
         ObjectList actors;
         for (std::vector<Actor*>::iterator i = found_actors.begin(); i != e; ++i) {
             Actor *actor = *i;
-            GridPos actor_pos(actor->get_pos());
-            double r = get_radius(actor);
+            GridPos actor_pos(actor->getPos());
+            double r = actor->getRadius();
     
             if (actor_pos == newPos) { // if the actor is in the dest field
                 actors.push_back(actor);
                 SendMessage(actor, "_freeze");
 
-                ecl::V2 dest = actor->get_pos();
+                ecl::V2 dest = actor->getPos();
                 dest[0] = ecl::Clamp<double> (dest[0], oldPos.x+0.01, oldPos.x+0.99);
                 dest[1] = ecl::Clamp<double> (dest[1], oldPos.y+0.01, oldPos.y+0.99);
 
                 if (dir == EAST || dir == WEST) {
                     Stone *obstacle = GetStone(move(oldPos, NORTH));
-                    if ((obstacle != NULL) && (((obstacle->get_traits().id == st_window) &&
+                    if ((obstacle != nullptr) && (((obstacle->get_traits().id == st_window) &&
                             has_dir(obstacle->getFaces(), SOUTH)) || obstacle->is_sticky(actor))) {
                         dest[1] = ecl::Max(dest[1], oldPos.y + r);
                     }
                     obstacle = GetStone(move(oldPos, SOUTH));
-                    if ((obstacle != NULL) && (((obstacle->get_traits().id == st_window) &&
+                    if ((obstacle != nullptr) && (((obstacle->get_traits().id == st_window) &&
                             has_dir(obstacle->getFaces(), NORTH)) || obstacle->is_sticky(actor))) {
                         dest[1] = ecl::Min(dest[1], oldPos.y + 1 - r);
                     }
                 } else if (dir == NORTH || dir == SOUTH) {
                     Stone *obstacle = GetStone(move(oldPos, WEST));
-                    if ((obstacle != NULL) && (((obstacle->get_traits().id == st_window) &&
+                    if ((obstacle != nullptr) && (((obstacle->get_traits().id == st_window) &&
                             has_dir(obstacle->getFaces(), EAST)) || obstacle->is_sticky(actor))) {
                         dest[0] = ecl::Max(dest[0], oldPos.x + r);
                     }
                     obstacle = GetStone(move(oldPos, EAST));
-                    if ((obstacle != NULL) && (((obstacle->get_traits().id == st_window) &&
+                    if ((obstacle != nullptr) && (((obstacle->get_traits().id == st_window) &&
                             has_dir(obstacle->getFaces(), WEST)) || obstacle->is_sticky(actor))) {
                         dest[0] = ecl::Min(dest[0], oldPos.x + 1 - r);
                     }
@@ -155,7 +155,7 @@ namespace enigma {
             if (isDisplayable())
                 init_model();
         } else if (state == VANISHING) {
-            ObjectList actors = getAttr("$frozen_actors");
+            ObjectList actors = getAttr("$frozen_actors").toObjectList();
             for (ObjectList::iterator itr = actors.begin(); itr != actors.end(); ++itr)
                 SendMessage(*itr, "_revive");
             setStone();

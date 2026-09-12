@@ -41,7 +41,7 @@ namespace enigma {
     
     void ForwardFloor::setAttr(const std::string& key, const Value &val) {
         if (key == "flavor") {
-            std::string flavor = val.to_string();
+            std::string flavor = val.toString();
             ASSERT(flavor == "darkgray" || flavor == "bridgewood" ||
                    flavor == "platinum" || flavor == "bright" || flavor == "rough",
                    XLevelRuntime, "ScalesFloor illegal flavor value");
@@ -84,7 +84,7 @@ namespace enigma {
 
     void ForwardFloor::init_model() {
         std::string suffix = toSuffix((Direction)state);
-        std::string animname = "fl_forward_" + getAttr("flavor").to_string() + suffix;
+        std::string animname = "fl_forward_" + getAttr("flavor").toString() + suffix;
         set_anim(animname);
     }
 
@@ -116,7 +116,7 @@ namespace enigma {
             if (Value theid = getAttr("$stoneabove")) {
                 GridPos p = get_pos();
                 Stone *st = GetStone(p);
-                if (st != NULL && theid == st->getId())
+                if (st != nullptr && theid == st->getId())
                     send_impulse(p, (Direction)state);
             }
         }
@@ -124,7 +124,7 @@ namespace enigma {
 
     void ForwardFloor::send_impulses() {
         Stone *st = GetStone(get_pos());
-        Floor::setAttr("$stoneabove", (st == NULL) ? Value() : Value(st->getId()));
+        Floor::setAttr("$stoneabove", (st == nullptr) ? Value() : Value(st->getId()));
         GameTimer.set_alarm(this, 0.08, false, ALARM_PUSH);
     }
 

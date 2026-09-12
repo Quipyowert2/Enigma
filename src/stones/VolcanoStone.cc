@@ -33,7 +33,7 @@ namespace enigma {
 
 void VolcanoStone::setAttr(const std::string& key, const Value &val) {
         if (key == "secure") {
-            if (val.to_bool())
+            if (val.toBool())
                 objFlags |= OBJBIT_SECURE;
             else
                 objFlags &= ~OBJBIT_SECURE;
@@ -159,7 +159,7 @@ Value VolcanoStone::getAttr(const std::string &key) const {
     }
     
     void VolcanoStone::spread(GridPos p) {
-        if(GetStone(p) == NULL) {
+        if(GetStone(p) == nullptr) {
             Stone * st = MakeStone("st_volcano_new");
             st->setAttr("secure", getAttr("secure"));
             SetStone(p, st);
@@ -168,7 +168,7 @@ Value VolcanoStone::getAttr(const std::string &key) const {
     
     bool VolcanoStone::neighborsVulcanized() {
         for (Direction d = WEST; d != NODIR; d = next(d)) {
-            if (GetStone(move(get_pos(), d)) == NULL)
+            if (GetStone(move(get_pos(), d)) == nullptr)
                 if (!positionVulcanizable(move(get_pos(), d)))
                     return false;
         }
@@ -178,7 +178,7 @@ Value VolcanoStone::getAttr(const std::string &key) const {
     bool VolcanoStone::positionVulcanizable(GridPos p) {
         for (Direction d = WEST; d != NODIR; d = next(d)) {
             VolcanoStone *v = dynamic_cast<VolcanoStone *>(GetStone(move(p, d)));
-            if (v != this && v != NULL && v->externalState() == 1)
+            if (v != this && v != nullptr && v->externalState() == 1)
                 return true;
         }
         return false;

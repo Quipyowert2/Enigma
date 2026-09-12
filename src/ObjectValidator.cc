@@ -32,10 +32,14 @@
 #include <xercesc/dom/DOM.hpp>
 #include <xercesc/util/XMLDouble.hpp>
 
-XERCES_CPP_NAMESPACE_USE 
+using xercesc::DOMElement;
+using xercesc::DOMNode;
+using xercesc::DOMNodeList;
+using xercesc::XMLDouble;
+using xercesc::XMLString;
 
 namespace enigma {
-    ObjectValidator *ObjectValidator::theSingleton = NULL;
+    ObjectValidator *ObjectValidator::theSingleton = nullptr;
     bool ObjectValidator::mayInitialize = false;
     
     void ObjectValidator::didInitXML() {
@@ -45,9 +49,9 @@ namespace enigma {
     ObjectValidator* ObjectValidator::instance() {
         // autoinitialize on first access, but block any access during 
         // bootstraping as XML cannot be loaded at this stage. This may
-        // and shall cause NULL pointer exceptions on inproper usage 
+        // and shall cause NULL pointer exceptions on inproper usage
         // in basic object initialization!
-        if (theSingleton == NULL && mayInitialize) {
+        if (theSingleton == nullptr && mayInitialize) {
             theSingleton = new ObjectValidator();
             theSingleton->init();
         }
@@ -70,7 +74,7 @@ namespace enigma {
             app.domParserSchemaResolver->addSchemaId("objects.xsd","objects.xsd");
 
             doc = app.domParser->parseURI(objectsPath.c_str());
-            if (doc != NULL && !app.domParserErrorHandler->getSawErrors()) {
+            if (doc != nullptr && !app.domParserErrorHandler->getSawErrors()) {
                 
             }
             if(app.domParserErrorHandler->getSawErrors()) {
@@ -88,7 +92,7 @@ namespace enigma {
     }
      
     ObjectValidator::~ObjectValidator() {
-        if (doc != NULL)
+        if (doc != nullptr)
             shutdown();
         for (std::map<std::string, KindDescriptor *>::iterator it = kinds.begin(); it != kinds.end(); ++it)
             delete it->second;
@@ -103,7 +107,7 @@ namespace enigma {
     }
     
     void ObjectValidator::init() {
-        ASSERT(doc != NULL, XFrontend, "ObjectValidator try to init without given document");
+        ASSERT(doc != nullptr, XFrontend, "ObjectValidator try to init without given document");
         
         std::string errMessage;
         DOMNodeList *elemList;
@@ -135,9 +139,9 @@ namespace enigma {
     }
     
     void ObjectValidator::shutdown() {
-        if (doc != NULL)
+        if (doc != nullptr)
             doc->release();
-        doc = NULL;
+        doc = nullptr;
     }
     
     KindDescriptor *ObjectValidator::getKindDesc(std::string name) {
@@ -145,7 +149,7 @@ namespace enigma {
         if (it != kinds.end())
             return it->second;
         else
-            return NULL;
+            return nullptr;
     }
     
     MessageDescriptor *ObjectValidator::getMessage(std::string name) {
@@ -154,12 +158,12 @@ namespace enigma {
             return it->second;
 
         ASSERT(false, XFrontend, ("ObjectValidator missing message declaration for: " + name).c_str());
-        return NULL;
+        return nullptr;
     }
     
     bool ObjectValidator::validateMessage(Object *obj, std::string msg, Value val) {
         KindDescriptor *kind = getKindDesc(obj->getClass());
-        if (kind == NULL) {
+        if (kind == nullptr) {
             // object is not under validator control
             if (obj->getAttr(msg))
                 return false;       // default attribute value - try message
@@ -175,7 +179,7 @@ namespace enigma {
             return it->second;
 
         ASSERT(false, XFrontend, ("ObjectValidator missing default attribute declaration for: " + name).c_str());
-        return NULL;
+        return nullptr;
     }
     
     AttributeDescriptor *ObjectValidator::cloneAttribute(AttributeDescriptor *masterAttr) {
@@ -186,7 +190,7 @@ namespace enigma {
 
     ValidationResult ObjectValidator::validateAttributeWrite(const Object *obj, std::string key, Value val) {
         KindDescriptor *kind = getKindDesc(obj->getClass());
-        if (kind == NULL) {
+        if (kind == nullptr) {
             return VALID_OK;    // object is not under validator control - allow write
         }
         // state dependent target/action support
@@ -200,7 +204,7 @@ namespace enigma {
     
     bool ObjectValidator::validateAttributeRead(const Object *obj, std::string key) {
         KindDescriptor *kind = getKindDesc(obj->getClass());
-        if (kind == NULL) {
+        if (kind == nullptr) {
             return true;    // object is not under validator control
         }
         // state dependent target/action support
@@ -223,7 +227,7 @@ namespace enigma {
         KindDescriptor *kind = getKindDesc(obj->getClass());  // getClass is critical if it uses attributes
         recursive = false;
         
-        if (kind == NULL) {
+        if (kind == nullptr) {
             return Value(Value::DEFAULT);    // object is not under validator control
         }
         
@@ -239,7 +243,7 @@ namespace enigma {
     std::string ObjectValidator::getKind(const Object *obj) {
         std::string className = obj->getClass();
         KindDescriptor *kind = getKindDesc(className);
-        if (kind == NULL) {
+        if (kind == nullptr) {
             return className;    // object is not under validator control
         }
         return kind->getKind(obj);
@@ -247,7 +251,7 @@ namespace enigma {
     
     bool ObjectValidator::isKind(const Object *obj, std::string match) {
         KindDescriptor *kind = getKindDesc(obj->getClass());
-        if (kind == NULL) {
+        if (kind == nullptr) {
             return false;    // object is not under validator control
         }
         return kind->isKind(obj, match);

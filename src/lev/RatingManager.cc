@@ -31,9 +31,6 @@
 #include <sstream>
 #include <xercesc/dom/DOM.hpp>
 #include <xercesc/util/XercesVersion.hpp>
-#if _XERCES_VERSION < 30000
-#include <xercesc/framework/LocalFileFormatTarget.hpp>
-#endif
 
 using namespace std;
 using namespace enigma;
@@ -132,7 +129,7 @@ namespace enigma { namespace lev {
             app.domParserSchemaResolver->resetResolver();
             app.domParserSchemaResolver->addSchemaId("ratings.xsd","ratings.xsd");
             DOMDocument *doc = app.domParser->parseURI(path.c_str());
-            if (app.domParserSchemaResolver->didResolveSchema() && doc != NULL 
+            if (app.domParserSchemaResolver->didResolveSchema() && doc != nullptr
                     && !app.domParserErrorHandler->getSawErrors()) {
                 DOMElement *updateElem = 
                         dynamic_cast<DOMElement *>(doc->getElementsByTagName(
@@ -234,7 +231,7 @@ namespace enigma { namespace lev {
     }
     
     void RatingManager::update() {
-        std::time_t currentTime = std::time(NULL);
+        std::time_t currentTime = std::time(nullptr);
 
         // check if an update is allowed
         std::time_t currentWeirdTime = std::mktime(gmtime(&currentTime));
@@ -320,7 +317,7 @@ namespace enigma { namespace lev {
         if (didEditRatings) {
             // set the rating version to the current time
             char date[25];
-            std::time_t current = std::time(NULL);
+            std::time_t current = std::time(nullptr);
             strftime(date, 25, "%Y-%m-%dT%H:%M:%SZ",gmtime(&current));
             ratingVersionString = date;
         }
@@ -335,7 +332,7 @@ namespace enigma { namespace lev {
             app.domParserSchemaResolver->resetResolver();
             app.domParserSchemaResolver->addSchemaId("ratings.xsd","ratings.xsd");
             saveDoc = app.domParser->parseURI(ratTemplatePath.c_str());
-            if (saveDoc != NULL && !app.domParserErrorHandler->getSawErrors()) {
+            if (saveDoc != nullptr && !app.domParserErrorHandler->getSawErrors()) {
                 DOMElement * updateElem = dynamic_cast<DOMElement *>(saveDoc->getElementsByTagName(
                         Utf8ToXML("update").x_str())->item(0));
                 updateElem->setAttribute(Utf8ToXML("date").x_str(), Utf8ToXML(ratingVersionString.c_str()).x_str());
@@ -346,12 +343,7 @@ namespace enigma { namespace lev {
                         Utf8ToXML("levels").x_str())->item(0));
                 std::for_each(cache.begin(), cache.end(), saveLevelRating);
                 std::string writePath = app.userPath + "/" + RATINGSFILENAME;
-#if _XERCES_VERSION >= 30000
                 app.domSer->writeToURI(saveDoc, LocalToXML(writePath.c_str()).x_str());
-#else
-                XMLFormatTarget *myFormTarget = new LocalFileFormatTarget(writePath.c_str());
-                app.domSer->writeNode(myFormTarget, *saveDoc);            
-#endif
                 saveDoc->release();
             }
         }
@@ -423,13 +415,13 @@ namespace enigma { namespace lev {
             Rating * theRating = it->second;
             return theRating;
         } else {
-            return NULL;
+            return nullptr;
         }
     }
     
     short RatingManager::getIntelligence(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->intelligence;
         }
         return 0;
@@ -437,7 +429,7 @@ namespace enigma { namespace lev {
 
     void RatingManager::setIntelligence(Proxy *levelProxy, short intelligence) {
         Rating * theRating = registerNewRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             theRating->intelligence = intelligence;
             didEditRatings = true;
         }
@@ -445,7 +437,7 @@ namespace enigma { namespace lev {
 
     short RatingManager::getDexterity(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->dexterity;
         }
         return 0;
@@ -453,7 +445,7 @@ namespace enigma { namespace lev {
     
     void RatingManager::setDexterity(Proxy *levelProxy, short dexterity) {
         Rating * theRating = registerNewRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             theRating->dexterity = dexterity;
             didEditRatings = true;
         }
@@ -461,7 +453,7 @@ namespace enigma { namespace lev {
 
     short RatingManager::getPatience(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->patience;
         }
        
@@ -470,7 +462,7 @@ namespace enigma { namespace lev {
     
     void RatingManager::setPatience(Proxy *levelProxy, short patience) {
         Rating * theRating = registerNewRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             theRating->patience = patience;
             didEditRatings = true;
         }
@@ -478,7 +470,7 @@ namespace enigma { namespace lev {
 
     short RatingManager::getKnowledge(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->knowledge;
         }
        
@@ -487,7 +479,7 @@ namespace enigma { namespace lev {
     
     void RatingManager::setKnowledge(Proxy *levelProxy, short knowledge) {
         Rating * theRating = registerNewRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             theRating->knowledge = knowledge;
             didEditRatings = true;
         }
@@ -495,7 +487,7 @@ namespace enigma { namespace lev {
 
     short RatingManager::getSpeed(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->speed;
         }
        
@@ -504,7 +496,7 @@ namespace enigma { namespace lev {
 
     void RatingManager::setSpeed(Proxy *levelProxy, short speed) {
         Rating * theRating = registerNewRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             theRating->speed = speed;
             didEditRatings = true;
         }
@@ -512,7 +504,7 @@ namespace enigma { namespace lev {
 
     short RatingManager::getDifficulty(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->difficulty();
         }
 
@@ -572,7 +564,7 @@ namespace enigma { namespace lev {
 
     short RatingManager::getBestScoreEasy(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->bestScoreEasy;
         }
         return -1;
@@ -580,7 +572,7 @@ namespace enigma { namespace lev {
 
     std::string RatingManager::getBestScoreEasyHolder(Proxy *levelProxy, int cut) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return cutHolders(theRating->bestScoreEasyHolder, cut);
         }
         return "";
@@ -588,7 +580,7 @@ namespace enigma { namespace lev {
 
     short RatingManager::getBestScoreDifficult(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->bestScoreDifficult;
         }
         return -1;
@@ -596,7 +588,7 @@ namespace enigma { namespace lev {
 
     std::string RatingManager::getBestScoreDifficultHolder(Proxy *levelProxy, int cut) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return cutHolders(theRating->bestScoreDifficultHolder, cut);
         }
         return "";
@@ -619,7 +611,7 @@ namespace enigma { namespace lev {
     
     short RatingManager::getParScoreEasy(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->parScoreEasy;
         }
         return -1;
@@ -627,7 +619,7 @@ namespace enigma { namespace lev {
 
     short RatingManager::getParScoreDifficult(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->parScoreDifficult;
         }
         return -1;
@@ -635,7 +627,7 @@ namespace enigma { namespace lev {
 
     short RatingManager::getNumSolvedEasy(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->numSolvedEasy;
         }
         return 0;
@@ -643,7 +635,7 @@ namespace enigma { namespace lev {
 
     short RatingManager::getNumSolvedDifficult(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->numSolvedDifficult;
         }
         return 0;
@@ -651,7 +643,7 @@ namespace enigma { namespace lev {
 
     short RatingManager::getPdmSolvedEasy(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->pdmSolvedEasy;
         }
         return 0;
@@ -665,7 +657,7 @@ namespace enigma { namespace lev {
 
     short RatingManager::getPdmSolvedDifficult(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->pdmSolvedDifficult;
         }
         return 0;
@@ -679,7 +671,7 @@ namespace enigma { namespace lev {
 
     short RatingManager::getDAverageRating(Proxy *levelProxy) {
         Rating * theRating = findRating(levelProxy);
-        if (theRating != NULL) {
+        if (theRating != nullptr) {
             return theRating->averageRating;
         }
         return -1;
@@ -700,9 +692,9 @@ namespace enigma { namespace lev {
     bool RatingManager::compareByDifficulty(Proxy *proxy1, Proxy *proxy2) {
         Rating *r1 = instance()->findRating(proxy1);
         Rating *r2 = instance()->findRating(proxy2);
-        if (r1 == NULL)
+        if (r1 == nullptr)
             return false;
-        if (r2 == NULL)
+        if (r2 == nullptr)
             return true;
         return r1->difficulty() < r2->difficulty();
     }
@@ -710,9 +702,9 @@ namespace enigma { namespace lev {
     bool RatingManager::compareByAverageRating(Proxy *proxy1, Proxy *proxy2) {
         Rating *r1 = instance()->findRating(proxy1);
         Rating *r2 = instance()->findRating(proxy2);
-        if (r1 == NULL)
+        if (r1 == nullptr)
             return false;
-        if (r2 == NULL)
+        if (r2 == nullptr)
             return true;
         return r1->averageRating < r2->averageRating;
     }

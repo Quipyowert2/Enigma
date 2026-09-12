@@ -83,7 +83,7 @@ public:
     ~Scaler();
 
     void precalculate(SDL_Surface* src, SDL_Rect* srccrop, SDL_Surface* dst);
-    void blit_scaled(SDL_Surface* src, SDL_Rect* srcrect, SDL_Surface* dst, SDL_Rect* dstrect);
+    void blit_scaled(SDL_Surface* src, const SDL_Rect* srcRect, SDL_Surface* dst, SDL_Rect* dstRect);
 
 private:
     ScalerMode mode;
@@ -99,10 +99,10 @@ enum GS_Flags { GS_DEFAULT = 0, GS_ANTIALIAS = 1, GS_NOCLIP = 2 };
 
 struct GraphicsState {
     // Constructors.
-    GraphicsState(Rect clipr = Rect()) : cliprect(std::move(clipr)), pcolor(0), flags(GS_DEFAULT) {}
+    GraphicsState(Rect clipr = Rect()) : clipRect(std::move(clipr)), pcolor(0), flags(GS_DEFAULT) {}
 
     // Variables.
-    Rect cliprect;       // current clipping rectangle
+    Rect clipRect;       // current clipping rectangle
     PackedColor pcolor;  // current color
     unsigned flags;
 };
@@ -163,7 +163,7 @@ class Surface : public Drawable {
 public:
     ~Surface();
 
-    Surface *zoom(int w, int h);
+    std::unique_ptr<Surface> zoom(int w, int h);
 
     void set_color_key(int r, int g, int b);
     void set_alpha(int a);
@@ -195,12 +195,12 @@ public:
     void box(const GS &gs, int x, int y, int w, int h) override;
     void line(const GS &gs, int x1, int y1, int x2, int y2) override;
     void blit(const GS &gs, int x, int y, const Surface *s, const Rect &r) override;
-    void blit(const GS &gs, int x, int y, const Surface *src) override;
+    void blit(const GS &gs, int x, int y, const Surface *surface) override;
 
     /* ---------- Static methods ---------- */
 
     // Create a new surface.
-    static Surface *make_surface(SDL_Surface *s, bool _has_alpha = true);
+    static std::unique_ptr<Surface> make_surface(SDL_Surface *s, bool _has_alpha = true);
 
 protected:
     // Constructor.
@@ -211,7 +211,7 @@ protected:
 
 private:
     SDL_PixelFormat *pixel_format;
-    bool has_alpha;
+    bool hasAlpha;
 };
 
 class SurfaceLock {
@@ -270,8 +270,8 @@ private:
     SDL_Window *m_window;
     std::unique_ptr<Surface> m_surface;
     SDL_Surface *m_sdlsurface;
-    RectList m_dirtyrects;
-    bool update_all_p;
+    RectList dirtyRects;
+    bool updateAll;
 
     Screen(const Screen &);
     Screen &operator=(const Screen &);
@@ -306,12 +306,12 @@ inline void disable_clipping(GS &gs) {
 }
 
 inline void clip(GS &gs, const Rect &r) {
-    gs.cliprect = r;
+    gs.clipRect = r;
     enable_clipping(gs);
 }
 
 inline void clip(GC &gc, const Rect &r) {
-    gc.cliprect = intersect(r, gc.drawable->size());
+    gc.clipRect = intersect(r, gc.drawable->size());
     enable_clipping(gc);
 }
 
@@ -357,14 +357,14 @@ inline void frame(const GC &gc, const Rect &r) {
 /* -------------------- Functions -------------------- */
 
 // Create a new surface.
-Surface *MakeSurface(int w, int h);
+std::unique_ptr<Surface> MakeSurface(int w, int h);
 
 // Create a surface from image data that is already somewhere in memory.
-Surface *MakeSurface(void *data, int w, int h, int bipp, int pitch,
-                     const RGBA_Mask &mask = RGBA_Mask());
+std::unique_ptr<Surface> MakeSurface(void *data, int w, int h, int bipp, int pitch,
+                                     const RGBA_Mask &mask = RGBA_Mask());
 
 // Create a copy of a surface.
-Surface *Duplicate(const Surface *s);
+std::unique_ptr<Surface> Duplicate(const Surface *s);
 
 // Save a surface to a PNG file.
 void SavePNG(const Surface *s, const std::string &filename);
@@ -372,7 +372,7 @@ void SavePNG(const Surface *s, const std::string &filename);
 // Create a new surface from a region of an old one. Performs proper clipping
 // and returns a surface of the appropriate size, which may be smaller than
 // the original size of `r'. The function returns the clipped region in `r'.
-Surface *Grab(const Surface *s, Rect &r);
+std::unique_ptr<Surface> Grab(const Surface *s, Rect &r);
 
 // Convert the surface to the native surface format. A pointer to a new
 // surface is returned; the old one must be deleted by hand once it is no
@@ -380,8 +380,8 @@ Surface *Grab(const Surface *s, Rect &r);
 Surface *DisplayFormat(Surface *s);
 
 // Load an image using SDL_image and convert it to an optimized format.
-Surface *LoadImage(const char *filename);
-Surface *LoadImage(SDL_RWops *src, int freesrc);
+std::unique_ptr<Surface> LoadImage(const char *filename);
+std::unique_ptr<Surface> LoadImage(SDL_RWops *src, int freesrc);
 
 // Overlay a rectangle `rect' in `s' with a transparent colored box.
 void TintRect(Surface *s, Rect rect, Uint8 r, Uint8 g, Uint8 b, Uint8 a);

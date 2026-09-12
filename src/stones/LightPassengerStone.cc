@@ -42,17 +42,17 @@ namespace enigma {
             setState(1 - state);
             return Value();
         } else if (m.message == "_model_reanimated") {
-            objFlags &= ~OBJBIT_SKATEDIR;  // NODIR
-            if (state != BREAK) {     // continue break animation
-                init_model();         // adjust possible changed model in other cases
+            objFlags &= ~OBJBIT_SKATEDIR; // NODIR
+            if (state != BREAK) {         // continue break animation
+                init_model();             // adjust possible changed model in other cases
             }
-            return Value();            
+            return Value();
         } else if (m.message == "_init") {
             if (objFlags & OBJBIT_LIGHTNEWDIRS)
                 lightDirChanged(NODIRBIT, (DirectionBits)(objFlags & OBJBIT_LIGHTNEWDIRS));
-            return Value();            
+            return Value();
         } else if (m.message == "_glasses") {
-            if ((((int)(m.value) & 16) != 0) != ((objFlags & OBJBIT_VISIBLE) != 0)) {
+            if (((m.value.toInt() & 16) != 0) != ((objFlags & OBJBIT_VISIBLE) != 0)) {
                 objFlags ^= OBJBIT_VISIBLE; // toggle visibility bit
                 init_model();
             }
@@ -115,7 +115,7 @@ namespace enigma {
         }
         if (state == ON || state == BLINK) {
             Item *it = GetItem(p);
-            if (it != NULL && get_id(it) == it_cross) {
+            if (it != nullptr && get_id(it) == it_cross) {
                 setState(0);
             }
         } else if (state == ON_NEW) {
@@ -157,12 +157,12 @@ namespace enigma {
     
     void LightPassengerStone::actor_hit(const StoneContact &sc) {
         Actor *a = sc.actor;
-        if (a != NULL && state == BLINK && player::WieldedItemIs(a, "it_hammer")) {
+        if (a != nullptr && state == BLINK && player::WieldedItemIs(a, "it_hammer")) {
             state = BREAK;
             init_model();
         } else if (state == OFF && player::WieldedItemIs(a, "it_brush")) {
             Item * it = GetItem(get_pos());
-            if (it != NULL && get_id(it) == it_cross)
+            if (it != nullptr && get_id(it) == it_cross)
                 KillItem(get_pos());
             setState(1);
         }
@@ -170,7 +170,7 @@ namespace enigma {
 
     void LightPassengerStone::on_impulse(const Impulse& impulse) {
         Actor *a = dynamic_cast<Actor*>(impulse.sender);
-        if (a == NULL && ((objFlags & OBJBIT_LIGHTNEWDIRS) == NODIRBIT || state == OFF 
+        if (a == nullptr && ((objFlags & OBJBIT_LIGHTNEWDIRS) == NODIRBIT || state == OFF
                 || server::GameCompatibility != GAMET_ENIGMA)) {
             move_stone(impulse.dir);
             propagateImpulse(impulse);
@@ -223,7 +223,7 @@ namespace enigma {
                 } else {
                     move_stone(skateDir);
                     Item * it = GetItem(get_pos());
-                    if (it != NULL && get_id(it) == it_cross) {
+                    if (it != nullptr && get_id(it) == it_cross) {
                         setState(0);
                     }
                 }
@@ -241,10 +241,10 @@ namespace enigma {
             the force resulting from floor->add_force. "baseinterval"
             is 50 ms or the interval given in "interval".
         */
-        double base = getAttr("interval");
+        double base = getAttr("interval").toDouble();
         if (Floor *floor = GetFloor(get_pos())) {
             if (Value f = getAttr("friction"))
-                base *= 1.0 + (double)f * floor->get_friction();
+                base *= 1.0 + f.toDouble() * floor->get_friction();
             if (Value g = getAttr("gradient")) {
                 Direction skateDir = (Direction)((int)((objFlags & OBJBIT_SKATEDIR) >> 24) - 1);
                 if (skateDir != NODIR) {
@@ -253,7 +253,7 @@ namespace enigma {
                     floor->add_force(0, vec);
                     quot = skateDir == NORTH ? -vec[1] : skateDir == SOUTH ? vec[1] :
                         skateDir == EAST ? vec[0] : skateDir == WEST ? -vec[0] : 0;
-                    base /= std::max(1.0 + (double)g * quot, 0.01);                    
+                    base /= std::max(1.0 + g.toDouble() * quot, 0.01);
                 }
             }
         }

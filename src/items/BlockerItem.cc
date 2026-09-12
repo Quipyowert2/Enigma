@@ -113,14 +113,14 @@ namespace enigma {
 
     void BlockerItem::actor_leave(Actor *a) {
         if (Value v = getAttr("autoclose")) {
-            if (v.to_bool()) {
+            if (v.toBool()) {
                 setState(0);     // close
             }
         }
     }
 
     void BlockerItem::stone_change(Stone *st) {
-        if (st != NULL) {
+        if (st != nullptr) {
             if (st->getClass() == "st_boulder") { // boulder arrived
                 switch (state) {
                     case IDLE:

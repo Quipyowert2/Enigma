@@ -27,7 +27,7 @@ namespace enigma {
 
     Meditation::Meditation(int initState) {
         state = initState;
-        whiteball = NULL;
+        whiteball = nullptr;
     }
 
     std::string Meditation::getClass() const {
@@ -39,7 +39,7 @@ namespace enigma {
             bool essential = (val == 1);
             if (essential != (bool)(objFlags & OBJBIT_INDISPENSIBLE)) {
                 if (isDisplayable()) {
-                    if (whiteball != NULL && enter_time == -1) {   // meditatist is registered
+                    if (whiteball != nullptr && enter_time == -1) {   // meditatist is registered
                         bool indispensable = objFlags & OBJBIT_INDISPENSIBLE;
                         ChangeMeditation(0, 0, indispensable ? -1 : +1, indispensable ? +1 : -1);
                     }
@@ -73,7 +73,7 @@ namespace enigma {
             checkActors();
             return Value();
         } else if (m.message == "_dying" ) {
-            if (whiteball == m.sender && m.value.to_bool() == true)
+            if (whiteball == m.sender && m.value.toBool() == true)
                 // meditatist left hollow (warp, ...)
                 deregisterWhiteball();
             return Value();
@@ -121,7 +121,7 @@ namespace enigma {
     void Meditation::on_removal(GridPos p) {
         if (objFlags & OBJBIT_INDISPENSIBLE)
             ChangeMeditation(0, -1, 0, 0);
-        if (whiteball != NULL)
+        if (whiteball != nullptr)
             deregisterWhiteball();
         Item::on_removal(p);
     }
@@ -140,15 +140,16 @@ namespace enigma {
         static const double MINTIME = 1.0;
         ItemID theid = get_id(this);
 
-        if (whiteball == NULL && !a->is_flying() && !a->is_dead()
-                && (get_id(a) == ac_pearl_white || get_id(a) == ac_pearl_black) && isMeditating(a)) {
+        if (whiteball == nullptr && !a->is_flying() && !a->is_dead()
+                && (a->getActorId() == ac_pearl_white || a->getActorId() == ac_pearl_black)
+                && isMeditating(a)) {
             // meditatist entered a free hollow
             whiteball  = a;
             enter_time = server::LevelTime;
         } else if (whiteball == a) {
             if (a->is_flying() || a->is_dead() || !isMeditating(a)) {
                 // meditatist left hollow
-                whiteball = NULL;
+                whiteball = nullptr;
                 if (enter_time == -1) {   // meditatist is registered
                     bool indispensable = objFlags & OBJBIT_INDISPENSIBLE;
                     ChangeMeditation(0, 0, indispensable ? -1 : 0, indispensable ? 0 : -1);
@@ -165,15 +166,15 @@ namespace enigma {
     }
 
     void Meditation::add_force(Actor *a, ecl::V2 &f) {
-        ecl::V2 v = a->get_pos() - get_pos().center();
+        ecl::V2 v = a->getPos() - get_pos().center();
         double dist = ecl::length(v);
 
         if (dist > (std::abs(state) > 1 ? 0.5 : 0.3))
             return;
 
         if (dist <= 0) { // exactly on hill-top
-            ActorInfo *ai = a->get_actorinfo();
-            if (length(ai->vel) <= 0) { // no velocity
+            const ActorInfo &ai = a->getActorInfo();
+            if (length(ai.vel) <= 0) { // no velocity
                 // we are never "exactly" on the top!
                 double x = DoubleRand(-0.03, 0.05);
                 double y = DoubleRand(-0.03, 0.05);
@@ -190,21 +191,20 @@ namespace enigma {
     double Meditation::getFriction(ecl::V2 position, double defaultFriction, Actor *a) {
         Value v = getAttr("friction");
         if (v && covers_floor(position, a))
-            return v;
-        else
-            return defaultFriction;
+            return v.toDouble();
+        return defaultFriction;
     }
 
     ecl::V2 Meditation::calcMouseforce(Actor *a, ecl::V2 mouseForce, ecl::V2 floorForce) {
         Value v = getAttr("adhesion");
-        if (v && covers_floor(a->get_pos(), a))
-            return mouseForce * (double)v ;
+        if (v && covers_floor(a->getPos(), a))
+            return mouseForce * v.toDouble();
         else
             return floorForce;
     }
 
     bool Meditation::isMeditating(Actor *a) {
-        double dist = ecl::length(a->get_pos() - get_pos().center());
+        double dist = ecl::length(a->getPos() - get_pos().center());
         return dist < 0.24 || ((state <= HOLLOW || state >= HILL) && dist < 0.4) ;
     }
 
@@ -221,14 +221,15 @@ namespace enigma {
     }
 
     void Meditation::checkActors() {
-        ItemID theid = get_id(this);
         std::vector<Actor*> actors;
         GetActorsInsideField(get_pos(), actors);
-        for (std::vector<Actor*>::iterator itr = actors.begin(); itr != actors.end(); ++itr) {
-            if (!(*itr)->is_flying() &&  whiteball==NULL
-                    && (get_id(*itr)==ac_pearl_white || get_id(*itr)==ac_pearl_black) && isMeditating(*itr)) {
+        for (Actor* actor : actors) {
+            if (!actor->is_flying() && whiteball == nullptr
+                    && (actor->getActorId() == ac_pearl_white
+                            || actor->getActorId() == ac_pearl_black)
+                    && isMeditating(actor)) {
                  // meditatist entered a free hollow
-                whiteball  = *itr;
+                whiteball  = actor;
                 enter_time = server::LevelTime;
                 break;
             }
@@ -236,11 +237,11 @@ namespace enigma {
     }
 
     void Meditation::deregisterWhiteball() {
-        if (whiteball != NULL && enter_time == -1) {   // meditatist is registered
+        if (whiteball != nullptr && enter_time == -1) {   // meditatist is registered
             bool indispensable = objFlags & OBJBIT_INDISPENSIBLE;
             ChangeMeditation(0, 0, indispensable ? -1 : 0, indispensable ? 0 : -1);
         }
-        whiteball = NULL;
+        whiteball = nullptr;
     }
 
     int Meditation::traitsIdx() const {

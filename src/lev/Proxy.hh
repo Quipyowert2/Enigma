@@ -28,7 +28,7 @@
 #include <vector>
 #include <xercesc/dom/DOMDocument.hpp>
 
-namespace enigma { namespace lev {
+namespace enigma::lev {
     enum controlType {force, balance, key, other};
     enum scoreUnitType {duration, number};
     enum scoreTargetType {time, pushes, moves, callback};
@@ -196,9 +196,9 @@ namespace enigma { namespace lev {
          * info in the Proxy as an exception.
          */
         GameType engineCompatibility;
-        XERCES_CPP_NAMESPACE_QUALIFIER DOMDocument *doc;
-        XERCES_CPP_NAMESPACE_QUALIFIER DOMElement *infoElem;
-        XERCES_CPP_NAMESPACE_QUALIFIER DOMNodeList *stringList;
+        xercesc::DOMDocument *doc;
+        xercesc::DOMElement *infoElem;
+        xercesc::DOMNodeList *stringList;
         double loadtime;
         
         void load(bool onlyMetadata, bool expectLevel);
@@ -213,6 +213,6 @@ namespace enigma { namespace lev {
         bool updateReleaseVersion();
         int scoreText2Int(std::string text);
     };
-}} // namespace enigma::lev
+} // namespace enigma::lev
 #endif
 

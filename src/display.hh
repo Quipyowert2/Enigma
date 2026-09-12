@@ -23,7 +23,7 @@
 #include "ecl_math.hh"
 #include "ecl_video.hh"
 
-namespace display {
+namespace enigma::display {
 
 //----------------------------------------
 // Definition of models
@@ -36,31 +36,32 @@ class ModelLayer;
 // callback from inside the callback; use a timer or a flag to do this.
 class ModelCallback {
 public:
-    virtual ~ModelCallback() {}
+    virtual ~ModelCallback() = default;
     virtual void animcb() = 0;
 };
 
 class Model {
 public:
-    virtual ~Model() {}
-    virtual void set_callback(ModelCallback *) {}
+    virtual ~Model() = default;
+    virtual void setCallback(ModelCallback *) {}
     virtual void reverse() {}
     virtual void restart() {}
 
-    virtual bool is_garbage() const { return false; }
+    [[nodiscard]] virtual bool hasFinished() const { return false; }
     virtual void tick(double /*dtime*/) {}
-    virtual bool has_changed(ecl::Rect & /*changed_region*/) { return false; }
+    virtual bool hasChanged(ecl::Rect & /*changed_region*/) { return false; }
 
     virtual void draw(ecl::GC & /*gc*/, int /*x*/, int /*y*/) {}
-    virtual void draw_shadow(ecl::GC & /*gc*/, int /*x*/, int /*y*/) {}
+    virtual void drawShadow(ecl::GC & /*gc*/, int /*x*/, int /*y*/) {}
 
-    virtual Model *get_shadow() const { return nullptr; }
+    [[nodiscard]] virtual Model *get_shadow() const { return nullptr; }
 
     virtual void expose(ModelLayer * /*ml*/, int /*videox*/, int /*videoy*/) {}
-    virtual void remove(ModelLayer * /*ml*/) {}
+    virtual void removeFromLayer(ModelLayer * /*ml*/) {}
 
-    virtual Model *clone() = 0;
-    virtual void get_extension(ecl::Rect &r);
+    virtual std::unique_ptr<Model> clone() = 0;
+    
+    virtual ecl::Rect boundingBox();
 };
 
 /* -------------------- Functions -------------------- */
@@ -68,15 +69,15 @@ public:
 void InitModels();
 void ShutdownModels();
 
-Model *MakeModel(const std::string &name);
+std::unique_ptr<Model> MakeModel(const std::string &name);
 
 int DefineImage(const char *name, const char *fname, int xoff, int yoff, int padding);
-int DefineSubImage(const char *name, const char *fname, int xoff, int yoff, ecl::Rect r);
+int DefineSubImage(const char *name, const char *fname, int xOff, int yOff, ecl::Rect subRect);
 void DefineRandModel(const char *name, int n, char **names);
 void DefineShadedModel(const char *name, const char *model, const char *shade);
 void DefineOverlayImage(const char *name, int n, char **images);
 void DefineComposite(const char *name, const char *bgname, const char *fgname);
-void DefineAnim(const char *name, bool loop_p);
+void DefineAnim(const char *name, bool looping);
 void AddFrame(const char *name, const char *model, double time);
 void DefineAlias(const char *name, const char *othername);
 
@@ -84,15 +85,11 @@ void DefineAlias(const char *name, const char *othername);
 // Models on the grid
 //----------------------------------------
 
-using enigma::GridPos;
-using enigma::GridLayer;
-using enigma::GridLoc;
-
 Model *SetModel(const GridLoc &l, const std::string &modelname);
-Model *SetModel(const GridLoc &l, Model *m);
+Model *SetModel(const GridLoc &l, std::unique_ptr<Model> m);
 void KillModel(const GridLoc &l);
 Model *GetModel(const GridLoc &l);
-Model *YieldModel(const GridLoc &l);
+std::unique_ptr<Model> YieldModel(const GridLoc &l);
 
 /* -------------------- Scrolling -------------------- */
 
@@ -104,7 +101,7 @@ enum FollowMode {
     FOLLOW_SMOOTH = 4,           // Follow pixel by pixel
 };
 
-enum FollowTyp {
+enum FollowType {
     FOLLOW_NONE = 0,    // Don't follow any sprite
     FOLLOW_SCROLL = 1,  // Scroll pixelwise
     FOLLOW_FLIP = 2,    // Flip the display to destination
@@ -120,7 +117,11 @@ void FocusReferencePoint();
 
 /* -------------------- Sprites -------------------- */
 
-enum SpriteLayer { SPRITE_ACTOR, SPRITE_EFFECT, SPRITE_DEBRIS };
+enum SpriteLayer {
+    SPRITE_ACTOR,
+    SPRITE_EFFECT,
+    SPRITE_DEBRIS
+};
 
 typedef unsigned int SpriteId;
 
@@ -136,8 +137,8 @@ public:
 
     void kill();
     void move(const ecl::V2 &newpos) const;
-    void replace_model(Model *m) const;
-    Model *get_model() const;
+    void replace_model(std::unique_ptr<Model> m) const;
+    [[nodiscard]] Model *get_model() const;
     void set_callback(ModelCallback *cb) const;
     void hide() const;
     void show() const;
@@ -155,42 +156,41 @@ SpriteHandle AddSprite(const ecl::V2 &pos, const char *modelname = nullptr);
 
 class DL_Lines;
 
-class RubberHandle {
+class LineHandle {
 public:
-    RubberHandle(DL_Lines *layer = nullptr, unsigned id = 0);
-    operator unsigned() { return id; }
+    explicit LineHandle(DL_Lines *layer = nullptr, unsigned id = 0);
+    unsigned getId() const { return id; }
 
-    void update_first(const ecl::V2 &p1);
-    void update_second(const ecl::V2 &p2);
+    void setStartPoint(const ecl::V2 &start);
+    void setEndPoint(const ecl::V2 &end);
     void kill();
-
-    DL_Lines *line_layer;
+private:
+    DL_Lines *lineLayer;
     unsigned id;
 };
 
 // Adds a rubber band between points p1 and p2.
-RubberHandle AddRubber(const ecl::V2 &p1, const ecl::V2 &p2, unsigned short rc, unsigned short gc,
-                       unsigned short bc, bool isThick);
+LineHandle AddRubber(const ecl::V2& start, const ecl::V2& end, unsigned short red,
+        unsigned short green, unsigned short blue, bool isThick);
 
 /* -------------------- Status bar -------------------- */
 
 class StatusBar {
 public:
-    virtual ~StatusBar() {}
-    virtual void set_inventory(enigma::Player activePlayer,
-                               const std::vector<std::string> &modelnames) = 0;
+    virtual ~StatusBar() = default;
+    virtual void setInventory(Player activePlayer, const std::vector<std::string>& modelNames) = 0;
 
-    virtual void show_text(const std::string &str, bool scrolling, double duration = -1) = 0;
-    virtual void hide_text() = 0;
+    virtual void showText(const std::string &str, bool scrolling, double duration) = 0;
+    virtual void hideText() = 0;
 
-    virtual void show_move_counter(bool active) = 0;
+    virtual void showMoveCounter(bool active) = 0;
     virtual void setCMode(bool flag) = 0;
     virtual void setBasicModes(std::string flags) = 0;
 
-    virtual void set_time(double time) = 0;
-    virtual void set_speed(double speed) = 0;
-    virtual void set_travelled_distance(double distance) = 0;
-    virtual void set_counter(int nummoves) = 0;
+    virtual void setTime(double time) = 0;
+    virtual void setSpeed(double speed) = 0;
+    virtual void setTravelledDistance(double distance) = 0;
+    virtual void setCounter(int nummoves) = 0;
 };
 
 StatusBar *GetStatusBar();
@@ -217,7 +217,7 @@ enum DisplayFlags {
 
 void ToggleFlag(DisplayFlags flag);
 
-void Init(bool show_fps = false);
+void Init(bool showFps = false);
 void Shutdown();
 
 void NewWorld(int w, int h);
@@ -225,13 +225,13 @@ void ResizeGameArea(int w, int h);
 const ecl::Rect &GetGameArea();
 
 void DrawAll(ecl::GC &gc);
-void RedrawAll(ecl::Screen *sfc);
-void Redraw(ecl::Screen *sfc);
+void RedrawAll(ecl::Screen *screen);
+void Redraw(ecl::Screen *screen);
 void Tick(double dtime);
 
-void SetTextSpeed(int newspeed);
+void SetTextSpeed(int newSpeed);
 int GetTextSpeed();
 
-}  // namespace display
+} // namespace enigma::display
 
 #endif

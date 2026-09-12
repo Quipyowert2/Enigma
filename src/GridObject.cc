@@ -110,7 +110,7 @@ namespace enigma {
     void GridObject::setAttr(const string& key, const Value &val) {
         if (key == "connections" || key == "faces") {
             int d = NODIRBIT;
-            std::string vs(val);
+            std::string vs = val.toString();
             if (vs.find('n') != std::string::npos) d |= NORTHBIT;
             if (vs.find('e') != std::string::npos) d |= EASTBIT;
             if (vs.find('s') != std::string::npos) d |= SOUTHBIT;
@@ -154,16 +154,15 @@ namespace enigma {
         set_model(getModelName());
     }
 
-    void GridObject::set_anim (const std::string &mname) 
-    {
+    void GridObject::set_anim (const std::string &mname) {
         set_model (mname);
         display::Model *m = get_model();
-        m->set_callback(this);
+        m->setCallback(this);
     }
     
     DirectionBits GridObject::getConnections() const {
         if (Value v = getAttr("$connections"))
-            return DirectionBits((int)v);
+            return DirectionBits(v.toInt());
         else
             return NODIRBIT;
     }
@@ -185,12 +184,12 @@ namespace enigma {
     double GridObject::squareDistance(const Object *other) const {
         if (isDisplayable()) {
             const Actor *a = dynamic_cast<const Actor *>(other);
-            if (a != NULL) {
-                ecl::V2 apos = a->get_pos();
+            if (a != nullptr) {
+                ecl::V2 apos = a->getPos();
                 return (apos[0] - pos.x)*(apos[0] - pos.x) + (apos[1] - pos.y)*(apos[1] - pos.y);
             }
             const GridObject *g = dynamic_cast<const GridObject *>(other);
-            if  (g != NULL && g->isDisplayable()) {
+            if  (g != nullptr && g->isDisplayable()) {
                 return (g->pos.x - pos.x)*(g->pos.x -  pos.x) + (g->pos.y -  pos.y)*(g->pos.y -  pos.y);
             }
         }
@@ -200,12 +199,12 @@ namespace enigma {
     bool GridObject::isSouthOrEastOf(const Object *other) const {
         if (isDisplayable()) {
             const Actor *a = dynamic_cast<const Actor *>(other);
-            if (a != NULL) {
-                ecl::V2 apos = a->get_pos();
+            if (a != nullptr) {
+                ecl::V2 apos = a->getPos();
                 return (apos[1] < pos.y) || ((apos[1] == pos.y) && (apos[0] < pos.x));
             }
             const GridObject *g = dynamic_cast<const GridObject *>(other);
-            if  (g != NULL && g->isDisplayable()) {
+            if  (g != nullptr && g->isDisplayable()) {
                 return (g->pos.y < pos.y) || ((g->pos.y ==  pos.y) && (g->pos.x <  pos.x));
             } else 
                 return true;  // other GridObject is not on Grid

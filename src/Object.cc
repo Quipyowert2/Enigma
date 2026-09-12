@@ -25,8 +25,6 @@
 
 #include "ecl_util.hh"
 
-#include <algorithm>
-
 namespace enigma {
 
 // remove comment from define below to switch on verbose messaging
@@ -60,7 +58,7 @@ int Object::getNextId(Object *obj, bool bootFinished) {
 }
 
 void Object::bootFinished() {
-    getNextId(NULL, true);
+    getNextId(nullptr, true);
 }
 
 void Object::freeId(int id) {
@@ -68,9 +66,8 @@ void Object::freeId(int id) {
 }
 
 Object *Object::getObject(int id) {
-    std::map<int, Object *>::iterator it = objects.find(id);
-    if (it == objects.end())
-        return NULL;
+    if (auto it = objects.find(id); it == objects.end())
+        return nullptr;
     else
         return it->second;
 }
@@ -106,7 +103,7 @@ bool Object::isKind(const std::string &kind) const {
     return ObjectValidator::instance()->isKind(this, kind);
 }
 
-bool Object::validateMessage(std::string msg, Value arg) {
+bool Object::validateMessage(const std::string& msg, const Value& arg) {
     return ObjectValidator::instance()->validateMessage(this, msg, arg);
 }
 
@@ -127,16 +124,16 @@ Value Object::message(const Message &m) {
         }
     } else if (m.message == "disconnect") {
         bool wasConnected = false;
-        ObjectList olist = getAttr("rubbers");  // a private deletion resistant copy
-        for (ObjectList::iterator it = olist.begin(); it != olist.end(); ++it)
-            KillOther(dynamic_cast<Other *>(*it));
+        ObjectList olist = getAttr("rubbers").toObjectList();  // a private deletion-resistant copy
+        for (auto& obj : olist)
+            KillOther(dynamic_cast<Other *>(obj));
         if (!olist.empty()) {
             wasConnected = true;
             setAttr("rubber", Value());  // delete attribute
         }
-        olist = getAttr("wires");  // a private deletion resistant copy
-        for (ObjectList::iterator it = olist.begin(); it != olist.end(); ++it)
-            KillOther(dynamic_cast<Other *>(*it));
+        olist = getAttr("wires").toObjectList();  // a private deletion-resistant copy
+        for (auto& obj : olist)
+            KillOther(dynamic_cast<Other *>(obj));
         if (!olist.empty()) {
             wasConnected = true;
             setAttr("wires", Value());  // delete attribute
@@ -148,12 +145,12 @@ Value Object::message(const Message &m) {
 
 void Object::setAttr(const std::string &key, const Value &val) {
     if (key == "inverse") {
-        if (val.to_bool())
+        if (val.toBool())
             objFlags |= OBJBIT_INVERSE;
         else
             objFlags &= ~OBJBIT_INVERSE;
     } else if (key == "nopaction") {
-        if (val.to_bool())
+        if (val.toBool())
             objFlags |= OBJBIT_NOP;
         else
             objFlags &= ~OBJBIT_NOP;
@@ -169,31 +166,31 @@ void Object::setAttr(const std::string &key, const Value &val) {
 void Object::setAttrChecked(const std::string &key, const Value &val) {
     // allow all user attributes and those system attributes with write allowance
     if (key == "name") {
-        std::string oldName = getAttr("name").to_string();
-        std::string newName = val.to_string();
+        std::string oldName = getAttr("name").toString();
+        std::string newName = val.toString();
         bool isRename = oldName.size() > 0 && newName != oldName;
 
         // on name clash unname other object with same name and repair all fellow references
         Object *victim = GetNamedObject(newName);
-        if (victim != NULL) {
+        if (victim != nullptr) {
             UnnameObject(victim);
-            ObjectList olist = victim->getAttr("fellows");
+            ObjectList olist = victim->getAttr("fellows").toObjectList();
             for (ObjectList::iterator itr = olist.begin(); itr != olist.end(); ++itr) {
-                ObjectList olist2 = (*itr)->getAttr("fellows");
-                olist2.remove(NULL);
+                ObjectList olist2 = (*itr)->getAttr("fellows").toObjectList();
+                olist2.remove(nullptr);
                 olist2.push_back(victim);
                 (*itr)->setAttr("fellows", olist2);
             }
         }
 
-        NameObject(this, val.to_string());
+        NameObject(this, val.toString());
 
-        // in case of a renaming repair all fellow reference that will now be NULL instead of this
+        // in case of a renaming repair all fellow reference that will now be nullptr instead of this
         if (isRename) {
-            ObjectList olist = getAttr("fellows");
+            ObjectList olist = getAttr("fellows").toObjectList();
             for (ObjectList::iterator itr = olist.begin(); itr != olist.end(); ++itr) {
-                ObjectList olist2 = (*itr)->getAttr("fellows");
-                olist2.remove(NULL);
+                ObjectList olist2 = (*itr)->getAttr("fellows").toObjectList();
+                olist2.remove(nullptr);
                 olist2.push_back(this);
                 (*itr)->setAttr("fellows", olist2);
             }
@@ -238,7 +235,7 @@ Value Object::getAttr(const std::string &key) const {
     } else if (key == "nopaction") {
         return (objFlags & OBJBIT_NOP) != 0;
     } else if (key == "basename") {
-        std::string name = getAttr("name").to_string();
+        std::string name = getAttr("name").toString();
         std::string::size_type p = name.rfind('%');
         if (p != std::string::npos)
             return name.substr(0, p);
@@ -263,13 +260,13 @@ Value Object::getDefaultedAttr(const std::string &key, Value defaultValue) const
 }
 
 void Object::transferName(Object *target) {
-    if (target == NULL)
+    if (target == nullptr)
         return;
     if (Value v = getAttr("name")) {
-        std::string name(v);
+        std::string name = v.toString();
         UnnameObject(this);
         if (Value old = target->getAttr("name")) {
-            std::string oldname(old);
+            std::string oldname = old.toString();
             if (oldname.size() > 0 && oldname[0] != '$' && name.size() > 0 && name[0] != '$')
                 target->warning("name '%s' overwritten by '%s'", oldname.c_str(), name.c_str());
             UnnameObject(target);
@@ -279,7 +276,7 @@ void Object::transferName(Object *target) {
 }
 
 void Object::transferIdentity(Object *target) {
-    if (target == NULL)
+    if (target == nullptr)
         return;
     transferName(target);
     for (AttribMap::iterator it = attribs.begin(); it != attribs.end(); ++it) {
@@ -298,38 +295,38 @@ void Object::performAction(const Value &val) {
         messageValue = invertActionValue(val);
 
     if (server::EnigmaCompatibility < 1.10) {
-        messageValue = messageValue.to_bool() ? 1 : 0;
+        messageValue = messageValue.toBool() ? 1 : 0;
     }
 
-    TokenList targets = getAttr("target");
-    TokenList actions = getAttr("action");
+    TokenList targets = getAttr("target").toTokenList();
+    TokenList actions = getAttr("action").toTokenList();
     if (Value state = getAttr("state")) {
-        int s = state;
+        int s = state.toInt();
         if (Value stateTargets = getAttr(ecl::strf("target_%d", s))) {
-            targets = stateTargets;
+            targets = stateTargets.toTokenList();
         }
         if (Value actionTargets = getAttr(ecl::strf("action_%d", s)))
-            actions = actionTargets;
+            actions = actionTargets.toTokenList();
     }
 
     TokenList::iterator ait = actions.begin();
     std::string action;  // empty string as default
-    bool secure = getAttr("safeaction").to_bool();
+    bool secure = getAttr("safeaction").toBool();
     for (TokenList::iterator tit = targets.begin(); tit != targets.end(); ++tit) {
-        action = (ait != actions.end()) ? ait->to_string() : "";
+        action = (ait != actions.end()) ? ait->toString() : "";
 
         ObjectList ol =
             tit->getObjectList(this);  // get all or nearest objects described by target token
-        if (ol.empty() || (ol.size() == 1 && ol.front() == NULL)) {  // no target object
+        if (ol.empty() || (ol.size() == 1 && ol.front() == nullptr)) {  // no target object
             if ((action == "callback" || action.empty()) && (tit->getType() == Value::STRING)) {
                 // it is an existing callback function
                 if (secure) {
-                    PerformSecureAction(this->getId(), true, !action.empty(), tit->get_string(),
+                    PerformSecureAction(this->getId(), true, !action.empty(), tit->getString(),
                                         messageValue);
                 } else {
-                    if (lua::CallFunc(lua::LevelState(), tit->get_string(), messageValue, this,
+                    if (lua::CallFunc(lua::LevelState(), tit->getString(), messageValue, this,
                                       !action.empty()) != lua::NO_LUAERROR) {
-                        throw XLevelRuntime(std::string("callback '") + tit->get_string() +
+                        throw XLevelRuntime(std::string("callback '") + tit->getString() +
                                             "' failed:\n" + lua::LastError(lua::LevelState()));
                     }
                 }
@@ -340,7 +337,7 @@ void Object::performAction(const Value &val) {
             if (action == "")
                 action = (objFlags & OBJBIT_NOP) ? "nop" : "toggle";
             for (ObjectList::iterator oit = ol.begin(); oit != ol.end(); ++oit) {
-                if (*oit != NULL) {
+                if (*oit != nullptr) {
                     std::string obj_action = action;
                     if (server::EnigmaCompatibility < 1.10) {
                         // we may need to translate the new API message to old API
@@ -364,7 +361,7 @@ void Object::performAction(const Value &val) {
 }
 
 Value Object::invertActionValue(const Value &val) const {
-    return !val.to_bool();  // invert and convert value to bool
+    return !val.toBool();  // invert and convert value to bool
 }
 
 /* Send an impulse to position 'dest' into direction dir.  If 'dest'
@@ -378,7 +375,7 @@ void Object::send_impulse(const GridPos &dest, Direction dir) {
 
 bool Object::getDestinationByIndex(int idx, ecl::V2 &dstpos) {
     int i = 0;                              // counter for destination candidates
-    TokenList tl = getAttr("destination");  // expand any tokens to a list of values
+    TokenList tl = getAttr("destination").toTokenList();  // expand any tokens to a list of values
     for (auto tit = tl.begin(); tit != tl.end(); ++tit) {
         PositionList pl = tit->getPositionList(this);  // convert next token to a list of positions
         for (auto position : pl) {
@@ -387,8 +384,8 @@ bool Object::getDestinationByIndex(int idx, ecl::V2 &dstpos) {
                 if (i == idx) {
                     dstpos = pos;
                     return true;
-                } else
-                    i++;
+                }
+                i++;
             }
         }
     }
@@ -397,7 +394,7 @@ bool Object::getDestinationByIndex(int idx, ecl::V2 &dstpos) {
 
 void Object::finalizeNearestObjectReferences(std::string attr) {
     bool modified = false;
-    TokenList targets = getAttr(attr);
+    TokenList targets = getAttr(attr).toTokenList();
 
     for (TokenList::iterator tit = targets.begin(); tit != targets.end(); ++tit) {
         modified |= tit->finalizeNearestObjectReference(this);
@@ -415,8 +412,8 @@ void Object::finalizeNearestObjectReferences() {
     finalizeNearestObjectReferences("destination");
     finalizeNearestObjectReferences("anchor1");
     finalizeNearestObjectReferences("anchor2");
-    int min = getAttr("$minState");
-    int max = getAttr("$maxState");
+    int min = getAttr("$minState").toInt();
+    int max = getAttr("$maxState").toInt();
     for (int i = min; i <= max; i++) {
         finalizeNearestObjectReferences(ecl::strf("target_%d", i));
     }

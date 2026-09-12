@@ -28,12 +28,12 @@
 //#include "main.hh"
 
 namespace enigma {
-    ThiefFloor::ThiefFloor() : Floor("fl_thief", 4.5, 1.5), victimId (0), bag (NULL) {
+    ThiefFloor::ThiefFloor() : Floor("fl_thief", 4.5, 1.5), victimId (0), bag (nullptr) {
 
     }
 
     ThiefFloor::~ThiefFloor() {
-        if (bag != NULL)
+        if (bag != nullptr)
             delete bag;
     }
 
@@ -45,13 +45,13 @@ namespace enigma {
         if (m.message == "_capture" && (state == IDLE || state == DRUNKEN) && isDisplayable()) {
             // add items on grid pos that can be picked up to our bag
             Item * it =  GetItem(get_pos());
-            if (it != NULL && !(it->get_traits().flags & itf_static) && bag != NULL) {
+            if (it != nullptr && !(it->get_traits().flags & itf_static) && bag != nullptr) {
                 dynamic_cast<ItemHolder *>(bag)->add_item(YieldItem(get_pos()));
             }
             // drop bag if pos is not occupied by a static item
-            if (GetItem(get_pos()) == NULL) {
+            if (GetItem(get_pos()) == nullptr) {
                 SetItem(get_pos(), bag);
-                bag = NULL;
+                bag = nullptr;
             }
             state = (state == IDLE) ? CAPTURE : DRUNKENCAPTURE;
             init_model();
@@ -132,12 +132,12 @@ namespace enigma {
         bool didSteal = false;
 
         // the actor that hit the thief may no longer exist!
-        if (Actor *victim = dynamic_cast<Actor *>(Object::getObject(victimId))) {
+        if (Actor *victim = dynamic_cast<Actor *>(getObject(victimId))) {
             if (Value owner = victim->getAttr("owner")) {
-                if (!(victim->has_shield())) {
-                    enigma::Inventory *inv = player::GetInventory(owner);
+                if (!victim->has_shield()) {
+                    Inventory *inv = player::GetInventory(owner.toInt());
                     if (inv && inv->size() > 0) {
-                        if (bag == NULL) {
+                        if (bag == nullptr) {
                             bag = MakeItem("it_bag");
                             bag->setOwnerPos(get_pos());
                         }
@@ -154,9 +154,9 @@ namespace enigma {
             }
         }
         // steal from grid
-        if(Item *it = GetItem(get_pos())) {
+        if (Item *it = GetItem(get_pos())) {
             if (!(it->get_traits().flags & itf_static)) {
-                if (bag == NULL) {
+                if (bag == nullptr) {
                     bag = MakeItem("it_bag");
                     bag->setOwnerPos(get_pos());
                 }

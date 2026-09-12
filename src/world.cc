@@ -18,25 +18,23 @@
  *
  */
 #include "world.hh"
-#include "world_internal.hh"
 
+#include "client.hh"
 #include "errors.hh"
 #include "laser.hh"
+#include "lua.hh"
+#include "main.hh"
 #include "player.hh"
+#include "server.hh"
 #include "SoundEffectManager.hh"
 #include "SoundEngine.hh"
-#include "options.hh"
-#include "server.hh"
-#include "lua.hh"
-#include "client.hh"
-#include "main.hh"
-#include "stones_internal.hh"
-#include "WorldProxy.hh"
 #include "stones/OxydStone.hh"
+#include "world_internal.hh"
+#include "WorldProxy.hh"
 
-#include <iostream>
 #include <algorithm>
 #include <functional>
+#include <iostream>
 #include <map>
 #include <numeric>
 
@@ -44,8 +42,7 @@
 // note: VERBOSE_MESSAGES is defined in multiple source files!
 // #define VERBOSE_MESSAGES
 
-using namespace std;
-using namespace ecl;
+using ecl::V2;
 
 namespace enigma {
 
@@ -118,8 +115,11 @@ Field::~Field() {
 /* -------------------- StoneContact -------------------- */
 
 StoneContact::StoneContact()
-: is_collision(false), ignore(false), new_collision(false), is_contact(false), outerCorner(false) {
-}
+    : outerCorner(false),
+      isCollision(false),
+      ignore(false),
+      isNewCollision(false),
+      isContact(false) {}
 
 DirectionBits contact_faces(const StoneContact &sc) {
     int dirs = NODIRBIT;
@@ -165,15 +165,15 @@ bool TrackMessages;
 
 template <class T>
 T *Layer<T>::get(GridPos p) {
-    if (Field *f = level->get_field(p))
+    if (Field *f = level->getField(p))
         return raw_get(*f);
     else
-        return defaultval;
+        return defaultVal;
 }
 
 template <class T>
 T *Layer<T>::yield(GridPos p) {
-    if (Field *f = level->get_field(p)) {
+    if (Field *f = level->getField(p)) {
         T *x = raw_get(*f);
         if (x) {
             raw_set(*f, nullptr);
@@ -181,13 +181,13 @@ T *Layer<T>::yield(GridPos p) {
         }
         return x;
     } else
-        return defaultval;
+        return defaultVal;
 }
 
 template <class T>
 void Layer<T>::set(GridPos p, T *x) {
     if (x) {
-        if (Field *f = level->get_field(p)) {
+        if (Field *f = level->getField(p)) {
             if (T *old = raw_get(*f)) {
                 old->removal(p);
                 dispose(old);
@@ -205,8 +205,8 @@ const double World::contact_e = 0.02;  // epsilon distant limit for contacts
 
 World::World(int ww, int hh)
 : fields(ww, hh),
-  leftmost_actor(nullptr),
-  rightmost_actor(nullptr),
+  leftmostActor(nullptr),
+  rightmostActor(nullptr),
   scrambleIntensity(10),  // difficult default
   numMeditatists(0),
   indispensableHollows(0),
@@ -214,8 +214,8 @@ World::World(int ww, int hh)
   engagedDispensableHollows(0),
   preparing_level(true),
   registerCriticalPositions(false) {
-    w = ww;
-    h = hh;
+    width = ww;
+    height = hh;
 }
 
 World::~World() {
@@ -228,36 +228,36 @@ World::~World() {
     // dispose all grid objects without removing them to avoid side effects
     // keep the field array still valid for arbitrary access
     for (auto &field : fields) {
-        dispose_object(field.stone);
+        disposeObject(field.stone);
         field.stone = nullptr;
-        dispose_object(field.item);
+        disposeObject(field.item);
         field.item = nullptr;
-        dispose_object(field.floor);
+        disposeObject(field.floor);
         field.floor = nullptr;
     }
     // reset the fields
     fields = FieldArray(0, 0);
-    for_each(actorlist.begin(), actorlist.end(), std::mem_fn(&Actor::dispose));
+    for_each(actorList.begin(), actorList.end(), std::mem_fn(&Actor::dispose));
 }
 
-bool World::is_border(const GridPos &p) {
-    return (p.x == 0 || p.y == 0 || p.x == w - 1 || p.y == h - 1);
+bool World::isBorder(const GridPos &p) const {
+    return (p.x == 0 || p.y == 0 || p.x == width - 1 || p.y == height - 1);
 }
 
 void World::remove(ForceField *ff) {
-    auto i = find(forces.begin(), forces.end(), ff);
-    if (i != forces.end())
-        forces.erase(i);
+    auto i = find(forceFields.begin(), forceFields.end(), ff);
+    if (i != forceFields.end())
+        forceFields.erase(i);
 }
 
-Object *World::get_named(const std::string &name) {
+Object *World::getNamed(const std::string &name) {
     std::string wanted = name;
-    if (wanted.size() > 0 && wanted[0] == '@')
+    if (!wanted.empty() && wanted[0] == '@')
         wanted.erase(0, 1);  // erase a leading @
-    if (wanted.size() > 0 && wanted[0] == '@')
+    if (!wanted.empty() && wanted[0] == '@')
         wanted.erase(0, 1);  // erase a leading @@
-    ecl::Dict<Object *>::iterator found = m_objnames.find(wanted);
-    if (found != m_objnames.end())
+    ecl::Dict<Object *>::iterator found = namedObjects.find(wanted);
+    if (found != namedObjects.end())
         return found->second;
     //    Log << "Did not find named object: " << name << '\n';
     return nullptr;
@@ -265,13 +265,13 @@ Object *World::get_named(const std::string &name) {
 
 std::list<Object *> World::get_group(const std::string &tmpl, Object *reference) {
     std::list<Object *> result;
-    ecl::Dict<Object *>::iterator it = m_objnames.begin();
+    ecl::Dict<Object *>::iterator it = namedObjects.begin();
     std::string pattern = tmpl;
     bool nearest = false;  // limit result to nearest object
     double mindist = -1;
-    if (pattern.size() > 0 && pattern[0] == '@') {
+    if (!pattern.empty() && pattern[0] == '@') {
         pattern.erase(0, 1);  // erase the leading @
-        if (pattern.size() == 0) {
+        if (pattern.empty()) {
             // a single "@" is a self reference
             result.push_back(reference);
             return result;
@@ -282,8 +282,8 @@ std::list<Object *> World::get_group(const std::string &tmpl, Object *reference)
             nearest = true;
     }
 
-    for (; it != m_objnames.end(); ++it) {
-        if (string_match(it->first, pattern)) {
+    for (; it != namedObjects.end(); ++it) {
+        if (ecl::string_match(it->first, pattern)) {
             if (!nearest || mindist < 0) {
                 result.push_back(it->second);
                 if (nearest) {
@@ -306,52 +306,52 @@ std::list<Object *> World::get_group(const std::string &tmpl, Object *reference)
 }
 
 void World::name_object(Object *obj, const std::string &name) {
-    Object *old = get_named(name);
+    Object *old = getNamed(name);
     if (old != nullptr)
         unname(old);
 
     std::string unique_name = name;
-    if (name.size() > 0 && name[name.size() - 1] == '#') {
+    if (!name.empty() && name[name.size() - 1] == '#') {
         // auto name object with a unique name
         int i;
-        //        for (i = 1; get_named(name + ecl::strf("%d",i)) != NULL; i++);
-        for (i = IntegerRand(1, 999999); get_named(name + ecl::strf("%d", i)) != nullptr;
+        //        for (i = 1; get_named(name + ecl::strf("%d",i)) != nullptr; i++);
+        for (i = IntegerRand(1, 999999); getNamed(name + ecl::strf("%d", i)) != nullptr;
              i = IntegerRand(1, 999999))
             ;
         unique_name = name + ecl::strf("%d", i);
     }
-    m_objnames.insert(unique_name, obj);  // [name] = obj;
+    namedObjects.insert(unique_name, obj);  // [name] = obj;
     obj->setAttr("name", unique_name);
 }
 
 void World::unname(Object *obj) {
     ASSERT(obj, XLevelRuntime, "unname: no object given");
     if (Value v = obj->getAttr("name")) {
-        m_objnames.remove(v.to_string());
+        namedObjects.remove(v.toString());
         obj->setAttr("name", Value());
     }
 }
 
-void World::namePosition(Value po, const std::string &name) {
+void World::namePosition(const Value& po, const std::string &name) {
     namedPositions.remove(name);  // need to remove to avoid duplicate inserts in ecl::dict
     namedPositions.insert(name, po);
 }
 
 Value World::getNamedPosition(const std::string &name) {
-    if (Object *o = get_named(name)) {
+    if (Object *o = getNamed(name)) {
         switch (o->getObjectType()) {
         case Object::STONE:
         case Object::FLOOR:
         case Object::ITEM: return dynamic_cast<GridObject *>(o)->get_pos();
-        case Object::ACTOR: return dynamic_cast<Actor *>(o)->get_pos();
+        case Object::ACTOR: return dynamic_cast<Actor *>(o)->getPos();
         default: return Value(GridPos(-1, -1));
         }
     }
 
     std::string wanted = name;
-    if (wanted.size() > 0 && wanted[0] == '@')
+    if (!wanted.empty() && wanted[0] == '@')
         wanted.erase(0, 1);  // erase a leading @
-    if (wanted.size() > 0 && wanted[0] == '@')
+    if (!wanted.empty() && wanted[0] == '@')
         wanted.erase(0, 1);  // erase a leading @@
     ecl::Dict<Value>::iterator found = namedPositions.find(wanted);
     if (found != namedPositions.end())
@@ -370,7 +370,7 @@ PositionList World::getPositionList(const std::string &tmpl, Object *reference) 
         case Object::ITEM:
             positions.push_back(dynamic_cast<GridObject *>(object)->get_pos());
             break;
-        case Object::ACTOR: positions.push_back(dynamic_cast<Actor *>(object)->get_pos()); break;
+        case Object::ACTOR: positions.push_back(dynamic_cast<Actor *>(object)->getPos()); break;
         default:
             // ignore
             break;
@@ -380,7 +380,7 @@ PositionList World::getPositionList(const std::string &tmpl, Object *reference) 
     ecl::Dict<Value>::iterator it = namedPositions.begin();
 
     for (; it != namedPositions.end(); ++it) {
-        if (string_match(it->first, tmpl) && !m_objnames.has_key(it->first)) {
+        if (ecl::string_match(it->first, tmpl) && !namedObjects.has_key(it->first)) {
             positions.push_back(it->second);
         }
     }
@@ -388,26 +388,26 @@ PositionList World::getPositionList(const std::string &tmpl, Object *reference) 
 }
 
 void World::add_actor(Actor *a) {
-    add_actor(a, a->get_pos());
+    add_actor(a, a->getPos());
 }
 
 void World::add_actor(Actor *a, const V2 &pos) {
-    actorlist.push_back(a);
-    a->m_actorinfo.pos = pos;
-    a->m_actorinfo.gridpos = GridPos(pos);
-    a->m_actorinfo.field = get_field(a->m_actorinfo.gridpos);
+    actorList.push_back(a);
+    a->actorInfo.pos = pos;
+    a->actorInfo.gridpos = GridPos(pos);
+    a->actorInfo.field = getField(a->actorInfo.gridpos);
 
     // Insert the actor as new rightmost_actor and (maybe) sort.
     // This makes use of did_move_actor. See version 1.1, rev.549
     // for explicit code without did_move_actor.
 
-    Actor *oldright = rightmost_actor;
+    Actor *oldright = rightmostActor;
 
     a->left = oldright;  // might be NULL
     a->right = nullptr;
-    rightmost_actor = a;
-    if (leftmost_actor == nullptr)
-        leftmost_actor = a;
+    rightmostActor = a;
+    if (leftmostActor == nullptr)
+        leftmostActor = a;
     if (oldright != nullptr) {
         oldright->right = a;
         did_move_actor(a);
@@ -418,22 +418,22 @@ void World::add_actor(Actor *a, const V2 &pos) {
         a->on_creation(pos);
     }
 
-    if (get_id(a) == ac_pearl_white || get_id(a) == ac_pearl_black)
+    if (a->getActorId() == ac_pearl_white || a->getActorId() == ac_pearl_black)
         ChangeMeditation(+1, 0, 0, 0);
 }
 
 Actor *World::yield_actor(Actor *a) {
-    auto i = find(actorlist.begin(), actorlist.end(), a);
-    if (i != actorlist.end()) {
-        actorlist.erase(i);
+    auto i = find(actorList.begin(), actorList.end(), a);
+    if (i != actorList.end()) {
+        actorList.erase(i);
 
         if (a->left == nullptr)
-            leftmost_actor = a->right;
+            leftmostActor = a->right;
         else
             a->left->right = a->right;
 
         if (a->right == nullptr)
-            rightmost_actor = a->left;
+            rightmostActor = a->left;
         else
             a->right->left = a->left;
 
@@ -449,17 +449,19 @@ Actor *World::yield_actor(Actor *a) {
 void World::exchange_actors(Actor *a1, Actor *a2) {
     // Exchange actor positions and sort via did_move_actor.
     // A version without did_move_actor is in version 1.1, rev.549.
-    ecl::V2 oldpos_a1 = a1->get_actorinfo()->pos;
-    a1->get_actorinfo()->pos = a2->get_actorinfo()->pos;
+    ActorInfo &actorInfo1 = a1->getMutableActorInfo();
+    ActorInfo &actorInfo2 = a2->getMutableActorInfo();
+    V2 oldPos1 = actorInfo1.pos;
+    actorInfo1.pos = actorInfo2.pos;
     did_move_actor(a1);
-    a2->get_actorinfo()->pos = oldpos_a1;
+    actorInfo2.pos = oldPos1;
     did_move_actor(a2);
 }
 
 void World::tick(double dtime) {
     // dtime is always 0.01 (cf. server.cc)
 
-    move_actors(dtime);
+    moveActors(dtime);
     tick_sound_dampings();
 
     // Tell floors and items about new stones.
@@ -467,8 +469,8 @@ void World::tick(double dtime) {
         stone_change(stone);
     changed_stones.clear();
 
-    m_mouseforce.tick(dtime);
-    for (auto &force : forces)
+    mouseForce.tick(dtime);
+    for (auto &force : forceFields)
         force->tick(dtime);
 
     GameTimer.tick(dtime);
@@ -476,8 +478,8 @@ void World::tick(double dtime) {
     PerformRecalcLight(false);  // recalculate laser beams if necessary
     doPerformPendingActions();
     // do kill lasered actors in same time step
-    for (auto actor : actorlist) {
-        Item *it = actor->get_actorinfo()->field->item;
+    for (auto actor : actorList) {
+        Item *it = actor->getActorInfo().field->item;
         if (it != nullptr && get_id(it) == it_laserbeam) {
             it->actor_hit(actor);
         }
@@ -503,20 +505,20 @@ void World::doPerformPendingActions() {
 
 /* ---------- Puzzle scrambling -------------------- */
 
-void World::add_scramble(GridPos p, Direction dir) {
+void World::addScramble(GridPos p, Direction dir) {
     scrambles.push_back(Scramble(p, dir, scrambleIntensity));
 }
 
-void World::scramble_puzzles() {
+void World::scramblePuzzles() {
     while (!scrambles.empty()) {
-        for (auto i = scrambles.begin(); i != scrambles.end(); ++i) {
-            Stone *puzz = GetStone(i->pos);
-            if (puzz && i->intensity) {
-                SendMessage(puzz, "_scramble", Value(double(i->dir)));
-                --i->intensity;
+        for (auto& scramble : scrambles) {
+            Stone *puzz = GetStone(scramble.pos);
+            if (puzz && scramble.intensity) {
+                SendMessage(puzz, "_scramble", Value(double(scramble.dir)));
+                --scramble.intensity;
             } else {
-                fprintf(stderr, "no stone found for scramble at %i/%i\n", i->pos.x, i->pos.y);
-                i->intensity = 0;
+                fprintf(stderr, "no stone found for scramble at %i/%i\n", scramble.pos.x, scramble.pos.y);
+                scramble.intensity = 0;
             }
         }
 
@@ -534,10 +536,10 @@ void World::scramble_puzzles() {
 #define M_PI 3.1415926535
 #endif
 
-ecl::V2 World::drunkenMouseforce(Actor *a, V2 &mforce) {
+ecl::V2 World::drunkenMouseforce(Actor *actor, const V2 &mforce) {
     V2 f = mforce;
-    if (a->get_controllers() != 0) {
-        if (a->is_drunken()) {
+    if (actor->getControllers() != 0) {
+        if (actor->is_drunken()) {
             int t1 = (int)server::LevelTime;
             double base1 = fmod(t1 * M_PI, 2.0) - 1.0;
             int t2 = (int)(5.0 * server::LevelTime);
@@ -550,21 +552,17 @@ ecl::V2 World::drunkenMouseforce(Actor *a, V2 &mforce) {
     return f;
 }
 
-/*! Calculate the total force on an actor A at time TIME.  The
-  actor's current position X and velocity V are also passed.  [Note
-  that the position and velocity entries in ActorInfo will be updated
-  only after a *successful* time step, so they cannot be used
-  here.] */
+/*! Calculate the total force on an actor 'a'. */
 ecl::V2 World::get_local_force(Actor *a) {
     ecl::V2 f;
     ecl::V2 m;
     double friction = 0;
 
     if (a->is_on_floor()) {
-        if (Floor *floor = a->m_actorinfo.field->floor) {
+        if (Floor *floor = a->actorInfo.field->floor) {
             // Mouse force
-            if (a->get_controllers() != 0) {
-                m = floor->process_mouseforce(a, m_mouseforce.get_force(a));
+            if (a->getControllers() != 0) {
+                m = floor->process_mouseforce(a, mouseForce.get_force(a));
             }
             // Friction
             friction = floor->get_friction();
@@ -573,16 +571,16 @@ ecl::V2 World::get_local_force(Actor *a) {
             floor->add_force(a, f);
         }
 
-        if (Item *item = a->m_actorinfo.field->item) {
-            friction = item->getFriction(a->get_pos(), friction, a);
-            if (a->get_controllers() != 0) {
-                m = item->calcMouseforce(a, m_mouseforce.get_force(a), m);
+        if (Item *item = a->actorInfo.field->item) {
+            friction = item->getFriction(a->getPos(), friction, a);
+            if (a->getControllers() != 0) {
+                m = item->calcMouseforce(a, mouseForce.get_force(a), m);
             }
             item->add_force(a, f);
         }
     }
 
-    a->m_actorinfo.friction = friction;
+    a->actorInfo.friction = friction;
     f += drunkenMouseforce(a, m);
 
     return f;
@@ -590,32 +588,35 @@ ecl::V2 World::get_local_force(Actor *a) {
 
 /* Global forces are calculated less often than local ones, namely
    only once every four time steps, cf. move_actors().  They are used
-   for forces that are more time consuming to calculate, i.e.,
+   for forces that are more time-consuming to calculate, i.e.,
    actor-actor interactions and external force fields. */
 ecl::V2 World::get_global_force(Actor *a) {
-    ecl::V2 f;
+    ecl::V2 force;
 
     // Constant force
-    f += server::ConstantForce;
+    force += server::ConstantForce;
 
     // Electrostatic forces between actors.
-    if (double q = get_charge(a)) {
-        for (auto a2 : actorlist) {
+    double charge1 = a->getCharge();
+    if (charge1 != 0.0) {
+        for (auto a2 : actorList) {
             if (a2 == a)
                 continue;
-            if (double q2 = get_charge(a2)) {
-                V2 distv = a->get_pos_force() - a2->get_pos_force();
-                if (double dist = distv.normalize())
-                    f += server::ElectricForce * q * q2 / (dist)*distv;
+            double charge2 = a2->getCharge();
+            if (charge2 != 0.0) {
+                V2 distv = a->getPosForce() - a2->getPosForce();
+                double dist = distv.normalize();
+                if (dist != 0.0)
+                    force += server::ElectricForce * charge1 * charge2 / dist * distv;
             }
         }
     }
 
     // All other force fields.
-    for (auto force : forces)
-        f += force->globalForce(a);
+    for (auto forceField : forceFields)
+        force += forceField->globalForce(a);
 
-    return f;
+    return force;
 }
 
 /* -------------------- Collision handling -------------------- */
@@ -630,8 +631,8 @@ ecl::V2 World::get_global_force(Actor *a) {
 //    the contact information and `is_contact' is set to true.
 //
 // 3) The stone and the actor are _not_ in contact. In this case, `c' is
-//    filled is filled with information about the closest feature on the stone
-//    and `is_contact' is set to false.
+//    filled with information about the closest feature on the stone
+//    and 'is_contact' is set to false.
 
 /**
  * Examine a possible contact of an actor with stone at a given grid position. Joins
@@ -644,24 +645,23 @@ ecl::V2 World::get_global_force(Actor *a) {
  *         relevant outer edge
  * @arg st  stone at gridposition if already known
  */
-void World::find_contact_with_stone(Actor *a, GridPos p, StoneContact &c,
-                                    DirectionBits winFacesActorStone, bool isRounded, Stone *st) {
-
-    c.is_contact = false;
+void World::find_contact_with_stone(Actor* actor, GridPos p, StoneContact& c,
+        DirectionBits winFacesActorStone, bool isRounded, Stone* st) {
+    c.isContact = false;
     c.faces = NODIRBIT;
     c.outerCorner = false;
     bool isInnerContact = false;
 
-    Stone *stone = (st != nullptr) ? st : GetStone(p);
+    Stone *stone = st != nullptr ? st : GetStone(p);
     if (!stone)
         return;
 
     bool isWindow = stone->get_traits().id == st_window;
     DirectionBits wsides = NODIRBIT;
     if (isWindow)
-        wsides = stone->getFaces(a->is_invisible());
+        wsides = stone->getFaces(actor->is_invisible());
 
-    const ActorInfo &ai = *a->get_actorinfo();
+    const ActorInfo &ai = actor->getActorInfo();
     double r = ai.radius;
 
     int x = p.x, y = p.y;
@@ -712,12 +712,12 @@ void World::find_contact_with_stone(Actor *a, GridPos p, StoneContact &c,
 
             // the faces that the neighbour window owns
             Stone *neighbour = GetStone(GridPos(x + xoff_neighbour, y + yoff_neighbour));
-            DirectionBits face_neighbour =
+            DirectionBits faceNeighbour =
                 (neighbour != nullptr && neighbour->get_traits().id == st_window)
-                    ? neighbour->getFaces(a->is_invisible())
+                    ? neighbour->getFaces(actor->is_invisible())
                     : NODIRBIT;
 
-            if ((winFacesActorStone & face) && !(face_neighbour & face)) {
+            if ((winFacesActorStone & face) && !(faceNeighbour & face)) {
                 // contact to an inner corner of a window stone
                 // same code as external corner below
                 double cx[2] = {cdist, -cdist};
@@ -725,45 +725,45 @@ void World::find_contact_with_stone(Actor *a, GridPos p, StoneContact &c,
                 V2 corner(x + xcorner + cx[xcorner], y + ycorner + cx[ycorner]);
                 V2 b = V2(ax, ay) - corner;
 
-                // fix 45 degree collisions that may require precision
+                // fix 45-degree collisions that may require precision
                 if (abs(abs(b[0]) - abs(b[1])) < 1.0e-7) {
                     b[1] = (b[1] >= 0) ? abs(b[0]) : -abs(b[0]);
                 }
 
-                c.is_contact = (length(b) - r - cdist < contact_e);
+                c.isContact = length(b) - r - cdist < contact_e;
                 c.normal = normalize(b);
                 c.faces = face;
-                c.contact_point = corner + c.normal * cdist;
+                c.contactPoint = corner + c.normal * cdist;
                 isInnerContact = true;
 
                 // all straight contacts to inner window faces including the corners that are joined
             } else if ((winFacesActorStone & SOUTHBIT) &&
                        (ay > y + 1 - 2 * erad_window_const - r - contact_e)) {
-                c.contact_point = V2(ax, y + 1 - 2 * erad_window_const);
+                c.contactPoint = V2(ax, y + 1 - 2 * erad_window_const);
                 c.normal = V2(0, -1);
                 c.faces = SOUTHBIT;
-                c.is_contact = true;
+                c.isContact = true;
                 isInnerContact = true;
             } else if ((winFacesActorStone & NORTHBIT) &&
                        (ay <= y + 2 * erad_window_const + r + contact_e)) {
-                c.contact_point = V2(ax, y + 2 * erad_window_const);
+                c.contactPoint = V2(ax, y + 2 * erad_window_const);
                 c.normal = V2(0, +1);
                 c.faces = NORTHBIT;
-                c.is_contact = true;
+                c.isContact = true;
                 isInnerContact = true;
             } else if ((winFacesActorStone & WESTBIT) &&
                        (ax <= x + 2 * erad_window_const + r + contact_e)) {
-                c.contact_point = V2(x + 2 * erad_window_const, ay);
+                c.contactPoint = V2(x + 2 * erad_window_const, ay);
                 c.normal = V2(+1, 0);
                 c.faces = WESTBIT;
-                c.is_contact = true;
+                c.isContact = true;
                 isInnerContact = true;
             } else if ((winFacesActorStone & EASTBIT) &&
                        (ax > x + 1 - 2 * erad_window_const - r - contact_e)) {
-                c.contact_point = V2(x + 1 - 2 * erad_window_const, ay);
+                c.contactPoint = V2(x + 1 - 2 * erad_window_const, ay);
                 c.normal = V2(-1, 0);
                 c.faces = EASTBIT;
-                c.is_contact = true;
+                c.isContact = true;
                 isInnerContact = true;
             }
         }
@@ -781,19 +781,19 @@ void World::find_contact_with_stone(Actor *a, GridPos p, StoneContact &c,
 
         // south
         if (ay > y + 1) {
-            c.contact_point = V2(ax, y + 1);
+            c.contactPoint = V2(ax, y + 1);
             c.normal = V2(0, +1);
             c.faces = SOUTHBIT;
             dist = ay - (y + 1);
         }
         // north
         else if (ay < y) {
-            c.contact_point = V2(ax, y);
+            c.contactPoint = V2(ax, y);
             c.normal = V2(0, -1);
             c.faces = NORTHBIT;
             dist = y - ay;
         }
-        c.is_contact = (dist - r < contact_e);
+        c.isContact = (dist - r < contact_e);
 
         if (isWindow &&
             (((ay > y + 1) && !(wsides & SOUTHBIT)) || ((ay < y) && !(wsides & NORTHBIT)))) {
@@ -811,17 +811,17 @@ void World::find_contact_with_stone(Actor *a, GridPos p, StoneContact &c,
               (ay >= y + 1 - erad_window_const))) {
         double dist = r + 5;
         if (ax > x + 1) {  // east
-            c.contact_point = V2(x + 1, ay);
+            c.contactPoint = V2(x + 1, ay);
             c.normal = V2(+1, 0);
             c.faces = EASTBIT;
             dist = ax - (x + 1);
         } else if (ax < x) {  // west
-            c.contact_point = V2(x, ay);
+            c.contactPoint = V2(x, ay);
             c.normal = V2(-1, 0);
             c.faces = WESTBIT;
             dist = x - ax;
         }
-        c.is_contact = (dist - r < contact_e);
+        c.isContact = (dist - r < contact_e);
         if (isWindow &&
             (((ax > x + 1) && !(wsides & EASTBIT)) || ((ax < x) && !(wsides & WESTBIT)))) {
             // actor did hit joined part of end face
@@ -855,9 +855,9 @@ void World::find_contact_with_stone(Actor *a, GridPos p, StoneContact &c,
             b[1] = (b[1] >= 0) ? abs(b[0]) : -abs(b[0]);
         }
 
-        c.is_contact = (length(b) - r - cdist < contact_e);
+        c.isContact = (length(b) - r - cdist < contact_e);
         c.normal = normalize(b);
-        c.contact_point = corner + c.normal * cdist;
+        c.contactPoint = corner + c.normal * cdist;
         if (!isWindow) {
             if (abs(b[0]) >= abs(b[1])) {
                 if (b[0] < 0)
@@ -887,18 +887,18 @@ void World::find_contact_with_stone(Actor *a, GridPos p, StoneContact &c,
         c.outerCorner = true;
     }
 
-    if (c.is_contact) {
+    if (c.isContact) {
         // treat this as a collision only if actor not inside the stone
         // and velocity towards stone
         if (!isInnerContact && ax >= x && ax < x + 1 && ay >= y && ay < y + 1)
-            c.is_collision = false;
+            c.isCollision = false;
         else
-            c.is_collision = c.normal * ai.vel < 0;
+            c.isCollision = c.normal * ai.vel < 0;
 
         c.ignore = false;
-        c.actor = a;
-        c.stonepos = p;
-        c.stoneid = stone->get_traits().id;
+        c.actor = actor;
+        c.stonePos = p;
+        c.stoneId = stone->get_traits().id;
         c.response = stone->collision_response(c);
         c.sound = stone->collision_sound();
     }
@@ -941,7 +941,7 @@ void World::find_contact_with_edge(Actor *a, GridPos p0, GridPos p1, GridPos p2,
         // join stones to a block without rounded edges
         find_contact_with_stone(a, p1, c1, winFacesActorStone, false,
                                 s1);  // collision with straight neighbour only
-        if (c1.normal * (a->get_actorinfo()->vel) >=
+        if (c1.normal * (a->getVel()) >=
             0 /* &&  s1 has restituion 1.0 */)  // leaving a oneway or door
             find_contact_with_stone(a, p0, c0, winFacesActorStone, true,
                                     s0);  // collide with diagonal stone
@@ -951,7 +951,7 @@ void World::find_contact_with_edge(Actor *a, GridPos p0, GridPos p1, GridPos p2,
         // join stones to a block without rounded edges
         find_contact_with_stone(a, p2, c2, winFacesActorStone, false,
                                 s2);  // contact with straight neighbour only
-        if (c2.normal * (a->get_actorinfo()->vel) >=
+        if (c2.normal * (a->getVel()) >=
             0 /* &&  s2 has restitution 1.0 */)  // leaving a oneway or door
             find_contact_with_stone(a, p0, c0, winFacesActorStone, true,
                                     s0);  // collide with diagonal stone
@@ -986,11 +986,11 @@ void World::find_contact_with_window(Actor *a, GridPos p, StoneContact &c0, Ston
     // we reuse the contact structure for optimization
     if (windowFaces & WESTBIT)
         find_contact_with_stone(a, p, c0, WESTBIT);
-    if ((windowFaces & EASTBIT) && c0.is_contact == false)
+    if ((windowFaces & EASTBIT) && c0.isContact == false)
         find_contact_with_stone(a, p, c0, EASTBIT);
     if (windowFaces & SOUTHBIT)
         find_contact_with_stone(a, p, c1, SOUTHBIT);
-    if ((windowFaces & NORTHBIT) && c1.is_contact == false)
+    if ((windowFaces & NORTHBIT) && c1.isContact == false)
         find_contact_with_stone(a, p, c1, NORTHBIT);
 }
 
@@ -1004,16 +1004,16 @@ void World::find_contact_with_window(Actor *a, GridPos p, StoneContact &c0, Ston
 void World::find_stone_contacts(Actor *a, StoneContact &c0, StoneContact &c1, StoneContact &c2) {
     // time critical routine that is performance optimized
 
-    c0.is_contact = false;
-    c1.is_contact = false;
-    c2.is_contact = false;
+    c0.isContact = false;
+    c1.isContact = false;
+    c2.isContact = false;
     c0.actor = a;
     c1.actor = a;
     c2.actor = a;
 
-    ActorInfo &ai = *a->get_actorinfo();
+    const ActorInfo &ai = a->getActorInfo();
     double re = ai.radius + contact_e;
-    GridPos g = GridPos(round_down<int>(ai.pos[0]), round_down<int>(ai.pos[1]));
+    GridPos g = GridPos(ecl::round_down<int>(ai.pos[0]), ecl::round_down<int>(ai.pos[1]));
     double x = ai.pos[0];
     double y = ai.pos[1];
     bool noCollisions = server::NoCollisions &&
@@ -1042,17 +1042,17 @@ void World::find_stone_contacts(Actor *a, StoneContact &c0, StoneContact &c1, St
             // upper left edge
             if (!noCollisions)  // just Borderstone collisions are needed for no collisions!
                 find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
-            if (c1.is_contact)
+            if (c1.isContact)
                 // inner west window contact - just look for north adjacent stone contact
                 find_contact_with_stone(a, GridPos(g.x, g.y - 1), c0, winFacesActorStone);
-            else if (c2.is_contact)
+            else if (c2.isContact)
                 // inner north window contact - just look for west adjacent stone contact
                 find_contact_with_stone(a, GridPos(g.x - 1, g.y), c0, winFacesActorStone);
             else {
                 c0.normal = V2(+1, +1);  // no need of normalization - just direction
                 c1.normal = V2(0, +1);
                 c2.normal = V2(+1, 0);
-                c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x, g.y);
+                c0.contactPoint = c1.contactPoint = c2.contactPoint = V2(g.x, g.y);
                 find_contact_with_edge(a, GridPos(g.x - 1, g.y - 1), GridPos(g.x, g.y - 1),
                                        GridPos(g.x - 1, g.y), c0, c1, c2, winFacesActorStone);
             }
@@ -1060,17 +1060,17 @@ void World::find_stone_contacts(Actor *a, StoneContact &c0, StoneContact &c1, St
             // upper right edge
             if (!noCollisions)
                 find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
-            if (c1.is_contact)
+            if (c1.isContact)
                 // inner east window contact - just look for north adjacent stone contact
                 find_contact_with_stone(a, GridPos(g.x, g.y - 1), c0, winFacesActorStone);
-            else if (c2.is_contact)
+            else if (c2.isContact)
                 // inner north window contact - just look for east adjacent stone contact
                 find_contact_with_stone(a, GridPos(g.x + 1, g.y), c0, winFacesActorStone);
             else {
                 c0.normal = V2(-1, +1);  // no need of normalization - just direction
                 c1.normal = V2(0, +1);
                 c2.normal = V2(-1, 0);
-                c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x + 1, g.y);
+                c0.contactPoint = c1.contactPoint = c2.contactPoint = V2(g.x + 1, g.y);
                 find_contact_with_edge(a, GridPos(g.x + 1, g.y - 1), GridPos(g.x, g.y - 1),
                                        GridPos(g.x + 1, g.y), c0, c1, c2, winFacesActorStone);
             }
@@ -1078,7 +1078,7 @@ void World::find_stone_contacts(Actor *a, StoneContact &c0, StoneContact &c1, St
             // upper middle part
             if (!noCollisions)
                 find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
-            if (!c2.is_contact)
+            if (!c2.isContact)
                 // only hit adjacent stone if no inner window is in front
                 find_contact_with_stone(a, GridPos(g.x, g.y - 1), c0, winFacesActorStone);
         }
@@ -1088,17 +1088,17 @@ void World::find_stone_contacts(Actor *a, StoneContact &c0, StoneContact &c1, St
             if (!noCollisions)
                 find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
             // lower left edge
-            if (c1.is_contact)
+            if (c1.isContact)
                 // inner west window contact - just look for south adjacent stone contact
                 find_contact_with_stone(a, GridPos(g.x, g.y + 1), c0, winFacesActorStone);
-            else if (c2.is_contact)
+            else if (c2.isContact)
                 // inner south window contact - just look for west adjacent stone contact
                 find_contact_with_stone(a, GridPos(g.x - 1, g.y), c0, winFacesActorStone);
             else {
                 c0.normal = V2(+1, -1);  // no need of normalization - just direction
                 c1.normal = V2(0, -1);
                 c2.normal = V2(+1, 0);
-                c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x, g.y + 1);
+                c0.contactPoint = c1.contactPoint = c2.contactPoint = V2(g.x, g.y + 1);
                 find_contact_with_edge(a, GridPos(g.x - 1, g.y + 1), GridPos(g.x, g.y + 1),
                                        GridPos(g.x - 1, g.y), c0, c1, c2, winFacesActorStone);
             }
@@ -1106,17 +1106,17 @@ void World::find_stone_contacts(Actor *a, StoneContact &c0, StoneContact &c1, St
             // lower right edge
             if (!noCollisions)
                 find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
-            if (c1.is_contact)
+            if (c1.isContact)
                 // inner east window contact - just look for south adjacent stone contact
                 find_contact_with_stone(a, GridPos(g.x, g.y + 1), c0, winFacesActorStone);
-            else if (c2.is_contact)
+            else if (c2.isContact)
                 // inner south window contact - just look for east adjacent stone contact
                 find_contact_with_stone(a, GridPos(g.x + 1, g.y), c0, winFacesActorStone);
             else {
                 c0.normal = V2(-1, -1);  // no need of normalization - just direction
                 c1.normal = V2(0, -1);
                 c2.normal = V2(-1, 0);
-                c0.contact_point = c1.contact_point = c2.contact_point = V2(g.x + 1, g.y + 1);
+                c0.contactPoint = c1.contactPoint = c2.contactPoint = V2(g.x + 1, g.y + 1);
                 find_contact_with_edge(a, GridPos(g.x + 1, g.y + 1), GridPos(g.x, g.y + 1),
                                        GridPos(g.x + 1, g.y), c0, c1, c2, winFacesActorStone);
             }
@@ -1124,7 +1124,7 @@ void World::find_stone_contacts(Actor *a, StoneContact &c0, StoneContact &c1, St
             // lower middle part
             if (!noCollisions)
                 find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
-            if (!c2.is_contact)
+            if (!c2.isContact)
                 // only hit adjacent stone if no inner window is in front
                 find_contact_with_stone(a, GridPos(g.x, g.y + 1), c0, winFacesActorStone);
         }
@@ -1134,14 +1134,14 @@ void World::find_stone_contacts(Actor *a, StoneContact &c0, StoneContact &c1, St
             // left middle part
             if (!noCollisions)
                 find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
-            if (!c1.is_contact)
+            if (!c1.isContact)
                 // only hit adjacent stone if no inner window is in front
                 find_contact_with_stone(a, GridPos(g.x - 1, g.y), c0, winFacesActorStone);
         } else if (-x + (g.x + 1) < re) {
             // right middle part
             if (!noCollisions)
                 find_contact_with_window(a, GridPos(g.x, g.y), c1, c2, winFacesActorStone);
-            if (!c1.is_contact)
+            if (!c1.isContact)
                 // only hit adjacent stone if no inner window is in front
                 find_contact_with_stone(a, GridPos(g.x + 1, g.y), c0, winFacesActorStone);
         } else {
@@ -1161,28 +1161,28 @@ void World::find_stone_contacts(Actor *a, StoneContact &c0, StoneContact &c1, St
   'stonepos' and no 'stone' entry.) */
 void World::handle_stone_contact(StoneContact &sc) {
     Actor *a = sc.actor;
-    ActorInfo &ai = *a->get_actorinfo();
+    ActorInfo &ai = a->getMutableActorInfo();
     double restitution = 1.0;  // 0.85;
 
-    if (server::NoCollisions && (sc.stoneid != st_borderstone) &&
+    if (server::NoCollisions && (sc.stoneId != st_borderstone) &&
         a->get_traits().id_mask & (1 << ac_marble_white | 1 << ac_marble_black |
                                    1 << ac_marble_glass |
                                    1 << ac_pearl_white | 1 << ac_pearl_black))
         return;
 
-    Contact contact(sc.contact_point, sc.normal);
+    Contact contact(sc.contactPoint, sc.normal);
 
-    if (sc.is_contact && sc.response == STONE_REBOUND) {
+    if (sc.isContact && sc.response == STONE_REBOUND) {
         ASSERT(ai.contacts_count < MAX_CONTACTS, XLevelRuntime,
                ecl::strf("Enigma Error - insufficient contacts: %d", ai.contacts_count).c_str());
         ai.contacts[ai.contacts_count++] = contact;
     }
 
-    if (sc.is_collision) {
+    if (sc.isCollision) {
         if (!sc.ignore && sc.response == STONE_REBOUND) {
             bool slow_collision = length(ai.vel) < 0.3;
             if (!has_nearby_contact(ai.last_contacts, ai.last_contacts_count, contact)) {
-                if (Stone *stone = GetStone(sc.stonepos)) {
+                if (Stone *stone = GetStone(sc.stonePos)) {
                     a->beforeStoneBounce(sc);
                     if (slow_collision)
                         stone->actor_touch(sc);
@@ -1190,11 +1190,11 @@ void World::handle_stone_contact(StoneContact &sc) {
                         stone->actor_hit(sc);
                     a->afterStoneBounce(sc);
                     if (!slow_collision) {
-                        client::Msg_Sparkle(sc.contact_point);
+                        client::Msg_Sparkle(sc.contactPoint);
                         double volume = std::max(0.25, length(ai.vel) / 8);
                         volume = std::min(1.0, volume);
-                        volume = GetVolume(sc.sound.c_str(), a, volume);
-                        sound::EmitSoundEvent(sc.sound.c_str(), sc.contact_point, volume);
+                        volume = GetVolume(sc.sound.c_str(), a, static_cast<float>(volume));
+                        sound::EmitSoundEvent(sc.sound, sc.contactPoint, volume);
                     }
                 }
             }
@@ -1209,11 +1209,11 @@ void World::handle_stone_contact(StoneContact &sc) {
             double dt = ActorTimeStep;
             ai.collforce -= (1 + restitution) * (ai.vel * sc.normal) * sc.normal / dt * ai.mass;
         }
-    } else if (sc.is_contact) {
-        if (Stone *stone = GetStone(sc.stonepos)) {
+    } else if (sc.isContact) {
+        if (Stone *stone = GetStone(sc.stonePos)) {
             stone->actor_contact(sc.actor);
 
-            if (a->get_gridpos() != sc.stonepos && !sc.ignore && sc.response == STONE_REBOUND) {
+            if (a->get_gridpos() != sc.stonePos && !sc.ignore && sc.response == STONE_REBOUND) {
                 // remove collision forces components from actor-actor collisions
                 // in direction of stone
                 double normal_component = sc.normal * ai.collforce;
@@ -1231,11 +1231,7 @@ struct ActorEntry {
     double pos;
     size_t idx;
 
-    ActorEntry() {
-        pos = 0;
-        idx = 0;
-    }
-    ActorEntry(double pos_, size_t idx_) {
+    ActorEntry(double pos_ = 0, size_t idx_ = 0) {
         pos = pos_;
         idx = idx_;
     }
@@ -1248,13 +1244,13 @@ struct ActorEntry {
 void World::handle_actor_contacts() {
     // For each actor, search for possible collisions with other actors.
     // If there is a good chance for a collision, call handle_actor_contact.
-    Actor *a = leftmost_actor;
+    Actor *a = leftmostActor;
     while (a != nullptr) {
         Actor *candidate = a->right;
-        double actingradius = a->m_actorinfo.radius + Actor::max_radius;
-        double max_x = a->m_actorinfo.pos[0] + actingradius;
-        while (candidate != nullptr && candidate->m_actorinfo.pos[0] <= max_x) {
-            double ydist = candidate->m_actorinfo.pos[1] - a->m_actorinfo.pos[1];
+        double actingradius = a->actorInfo.radius + Actor::maxRadius;
+        double max_x = a->actorInfo.pos[0] + actingradius;
+        while (candidate != nullptr && candidate->actorInfo.pos[0] <= max_x) {
+            double ydist = candidate->actorInfo.pos[1] - a->actorInfo.pos[1];
             ydist = (ydist < 0) ? -ydist : ydist;
             if (ydist <= actingradius) {
                 handle_actor_contact(a, candidate);
@@ -1265,11 +1261,11 @@ void World::handle_actor_contacts() {
     }
 }
 
+/// Determine whether there is a collision between actor1 and actor2.
 void World::handle_actor_contact(Actor *actor1, Actor *actor2) {
-    // Calculate if there is a collision between actor1 and actor2.
 
-    ActorInfo &a1 = *actor1->get_actorinfo();
-    ActorInfo &a2 = *actor2->get_actorinfo();
+    ActorInfo &a1 = actor1->getMutableActorInfo();
+    ActorInfo &a2 = actor2->getMutableActorInfo();
 
     if (a1.ignore_contacts || a2.ignore_contacts)
         return;
@@ -1336,51 +1332,51 @@ void World::handle_stone_contacts(unsigned actoridx) {
 
     static StoneContact contacts[3];  // recycle structures for efficiency
 
-    Actor *actor = actorlist[actoridx];
+    Actor *actor = actorList[actoridx];
 
-    if (actor->m_actorinfo.ignore_contacts)  // used by the cannonball for example
+    if (actor->actorInfo.ignore_contacts)  // used by the cannonball for example
         return;
 
     // Find contacts without any sideeffects
     find_stone_contacts(actor, contacts[0], contacts[1], contacts[2]);
 
     // Handle contacts with stones - forces and stone hit, touch callback
-    if (contacts[0].is_contact)
+    if (contacts[0].isContact)
         handle_stone_contact(contacts[0]);
-    if (contacts[1].is_contact)
+    if (contacts[1].isContact)
         handle_stone_contact(contacts[1]);
-    if (contacts[2].is_contact)
+    if (contacts[2].isContact)
         handle_stone_contact(contacts[2]);
 }
 
 /* -------------------- Actor Motion -------------------- */
 
-void World::move_actors(double dtime) {
+void World::moveActors(double dtime) {
     const double dt = ActorTimeStep;
 
     static double rest_time = 0;
     rest_time += dtime;
 
-    size_t nactors = actorlist.size();
+    size_t nactors = actorList.size();
     for (unsigned i = 0; i < nactors; ++i) {
-        Actor *a = actorlist[i];
-        ActorInfo &ai = *a->get_actorinfo();
+        Actor *a = actorList[i];
+        ActorInfo &ai = a->getMutableActorInfo();
         // extrapolate actor position for better accuracy of forces
         if (!ai.grabbed)
             ai.pos_force = ai.pos + dtime * 0.4 * ai.vel;
         else
             ai.pos_force = ai.pos;
     }
-    vector<V2> global_forces(nactors);
+    std::vector<V2> global_forces(nactors);
     for (unsigned i = 0; i < nactors; ++i) {
-        Actor *a = actorlist[i];
+        Actor *a = actorList[i];
         global_forces[i] = get_global_force(a);
     }
 
     while (rest_time > 0) {
         for (unsigned i = 0; i < nactors; ++i) {
-            Actor *a = actorlist[i];
-            ActorInfo &ai = *a->get_actorinfo();
+            Actor *a = actorList[i];
+            ActorInfo &ai = a->getMutableActorInfo();
 
             // the "6" is a historical accident, don't change it!
             ai.force = ai.forceacc * 6;
@@ -1397,7 +1393,7 @@ void World::move_actors(double dtime) {
             ai.contacts_count = 0;
         }
 
-        for (auto &rubberband : rubberbands) {
+        for (auto &rubberband : rubberBands) {
             rubberband->applyForces(dt);
         }
 
@@ -1405,8 +1401,8 @@ void World::move_actors(double dtime) {
         collisionCriticalPositions.clear();
         registerCriticalPositions = true;
         for (unsigned i = 0; i < nactors; ++i) {
-            Actor *a = actorlist[i];
-            ActorInfo &ai = *a->get_actorinfo();
+            Actor *a = actorList[i];
+            const ActorInfo &ai = a->getActorInfo();
             if (!ai.grabbed)
                 handle_stone_contacts(i);
         }
@@ -1414,8 +1410,8 @@ void World::move_actors(double dtime) {
         doPerformPendingActions();
 
         for (unsigned i = 0; i < nactors; ++i) {
-            Actor *a = actorlist[i];
-            ActorInfo &ai = *a->get_actorinfo();
+            Actor *a = actorList[i];
+            ActorInfo &ai = a->getMutableActorInfo();
             double dtime = dt;
 
             if (!a->can_move()) {
@@ -1423,7 +1419,7 @@ void World::move_actors(double dtime) {
                     client::Msg_Sparkle(ai.pos);
                 ai.vel = V2();
             } else if (!a->is_dead() && a->is_movable() && !ai.grabbed) {
-                advance_actor(a, dtime);
+                advanceActor(a, dtime);
             }
             a->move();  // 'move' nevertheless, to pick up items etc
             a->think(dtime);
@@ -1437,10 +1433,10 @@ void World::move_actors(double dtime) {
 /* This function performs one step in the numerical integration of an
    actor's equation of motion.  TIME ist the current absolute time and
    H the size of the integration step. */
-void World::advance_actor(Actor *a, double &dtime) {
+void World::advanceActor(Actor *actor, double &dtime) {
     const double MAXVEL = 70;  // 70 grids/s  < min_actor_radius/timestep !
 
-    ActorInfo &ai = *a->get_actorinfo();
+    ActorInfo &ai = actor->getMutableActorInfo();
     V2 oldPos = ai.pos;
     V2 force = ai.force;
 
@@ -1463,7 +1459,7 @@ void World::advance_actor(Actor *a, double &dtime) {
 
     // Friction influence
     double friction = server::FrictionFactor * ai.friction;
-    if (a->has_spikes())
+    if (actor->hasSpikes())
         friction += 7.0 * server::FrictionFactor;
 
     double vv = length(ai.vel);
@@ -1484,12 +1480,12 @@ void World::advance_actor(Actor *a, double &dtime) {
     // avoid actors outside of world
     if (ai.pos[0] < 0)
         ai.pos[0] = 0.0;
-    if (ai.pos[0] >= w)
-        ai.pos[0] = w - 1e-12;
+    if (ai.pos[0] >= width)
+        ai.pos[0] = width - 1e-12;
     if (ai.pos[1] < 0)
         ai.pos[1] = 0.0;
-    if (ai.pos[1] >= h)
-        ai.pos[1] = h - 1e-12;
+    if (ai.pos[1] >= height)
+        ai.pos[1] = height - 1e-12;
 
     GridPos oldGridPos(oldPos);
     GridPos newGridPos(ai.pos);
@@ -1524,11 +1520,11 @@ void World::advance_actor(Actor *a, double &dtime) {
             midPos += (0.5 - IntegerRand(0, 1)) * V2(1e-10, -1e-10);
         }
         ai.pos = midPos;
-        did_move_actor(a);
-        a->move();        // 'move' nevertheless, to pick up items etc
-        a->think(mid_t);  // partial time
+        did_move_actor(actor);
+        actor->move();        // 'move' nevertheless, to pick up items etc
+        actor->think(mid_t);  // partial time
         dtime -= mid_t;   // rest time
-        if (!a->is_dead() && a->is_movable() && !ai.grabbed && ai.pos == midPos) {
+        if (!actor->is_dead() && actor->is_movable() && !ai.grabbed && ai.pos == midPos) {
             ai.pos = newPos;
         } else {
             // something happend - do not continue old move
@@ -1536,32 +1532,32 @@ void World::advance_actor(Actor *a, double &dtime) {
         }
     }
 
-    did_move_actor(a);
+    did_move_actor(actor);
 }
 
 void World::did_move_actor(Actor *a) {
-    a->m_actorinfo.gridpos = GridPos(a->m_actorinfo.pos);
-    a->m_actorinfo.field = get_field(a->m_actorinfo.gridpos);
+    a->actorInfo.gridpos = GridPos(a->actorInfo.pos);
+    a->actorInfo.field = getField(a->actorInfo.gridpos);
 
-    double ax = a->m_actorinfo.pos[0];
+    double ax = a->actorInfo.pos[0];
     Actor *old_left = a->left;
     Actor *old_right = a->right;
     Actor *new_left = old_left;
     Actor *new_right = old_right;
     // find new position in actor list
-    while (new_left != nullptr && new_left->m_actorinfo.pos[0] > ax) {
+    while (new_left != nullptr && new_left->actorInfo.pos[0] > ax) {
         new_left = new_left->left;
     };
-    while (new_right != nullptr && new_right->m_actorinfo.pos[0] < ax) {
+    while (new_right != nullptr && new_right->actorInfo.pos[0] < ax) {
         new_right = new_right->right;
     };
     if (new_left != old_left || new_right != old_right) {
         // remove from old position
         if (old_left == nullptr) {
-            leftmost_actor = old_right;
+            leftmostActor = old_right;
             old_right->left = nullptr;
         } else if (old_right == nullptr) {
-            rightmost_actor = old_left;
+            rightmostActor = old_left;
             old_left->right = nullptr;
         } else {
             old_left->right = old_right;
@@ -1572,9 +1568,9 @@ void World::did_move_actor(Actor *a) {
             // did move to left side
             if (new_left == nullptr) {
                 a->left = nullptr;
-                a->right = leftmost_actor;
-                leftmost_actor->left = a;
-                leftmost_actor = a;
+                a->right = leftmostActor;
+                leftmostActor->left = a;
+                leftmostActor = a;
             } else {
                 a->left = new_left;
                 a->right = new_left->right;
@@ -1585,9 +1581,9 @@ void World::did_move_actor(Actor *a) {
             // did move to right side
             if (new_right == nullptr) {
                 a->right = nullptr;
-                a->left = rightmost_actor;
-                rightmost_actor->right = a;
-                rightmost_actor = a;
+                a->left = rightmostActor;
+                rightmostActor->right = a;
+                rightmostActor = a;
             } else {
                 a->right = new_right;
                 a->left = new_right->left;
@@ -1657,20 +1653,20 @@ void World::stone_change(GridPos p) {
 
 /* -------------------- Functions -------------------- */
 
-void Resize(int w, int h) {
+void Resize(int width, int height) {
     // The following is not quite clean; see GitHub Issue #78.
-    level.reset(new World(w, h));
-    display::NewWorld(w, h);
+    level = std::make_unique<World>(width, height);
+    display::NewWorld(width, height);
     server::WorldSized = true;
     player::NewGame();
 }
 
 int Width() {
-    return level->w;
+    return level->width;
 }
 
 int Height() {
-    return level->h;
+    return level->height;
 }
 
 void WorldPrepareLevel() {
@@ -1686,19 +1682,19 @@ bool WorldInitLevel() {
         server::CrackSpreading = server::Brittleness;
     }
 
-    level->scramble_puzzles();
+    level->scramblePuzzles();
 
     RecalcLight();
     PerformRecalcLight(true);  // recalculate laser beams if necessary
 
     bool seen_player0 = false;
 
-    for (auto a : level->actorlist) {
-        a->on_creation(a->get_actorinfo()->pos);
+    for (auto a : level->actorList) {
+        a->on_creation(a->getPos());
         SendMessage(a, "_init", Value());
 
         if (Value v = a->getAttr("owner")) {
-            int iplayer = v;
+            int iplayer = v.toInt();
             player::AddActor(iplayer, a);
             if (iplayer == 0)
                 seen_player0 = true;
@@ -1715,13 +1711,13 @@ bool WorldInitLevel() {
     BroadcastMessage("_init", Value(),
                      GridLayerBits(GRID_ITEMS_BIT | GRID_STONES_BIT | GRID_FLOOR_BIT));
 
-    for (auto &elem : level->others) {
-        SendMessage(elem, "_init", Value());
+    for (Other* other : level->others) {
+        SendMessage(other, "_init", Value());
     }
 
     server::InitMoveCounter();
     display::StatusBar *status_bar = display::GetStatusBar();
-    status_bar->show_move_counter(server::ShowMoves);
+    status_bar->showMoveCounter(server::ShowMoves);
     status_bar->setCMode(server::NoCollisions);
     status_bar->setBasicModes(std::string() +
                               (server::GameCompatibility == GAMET_ENIGMA ? "" : "x") +
@@ -1744,14 +1740,14 @@ bool WorldInitLevel() {
 }
 
 void SetMouseForce(V2 f) {
-    level->m_mouseforce.add_force(f);
+    level->mouseForce.add_force(f);
 }
 
 void NameObject(Object *obj, const std::string &name) {
-    string oldname;
+    std::string oldname;
     if (Value v = obj->getAttr("name")) {
-        oldname = v.to_string();
-        if (oldname.size() > 0 && oldname[0] != '$' && name.size() > 0 && name[0] != '$')
+        oldname = v.toString();
+        if (!oldname.empty() && oldname[0] != '$' && !name.empty() && name[0] != '$')
             obj->warning("name '%s' overwritten by '%s'", oldname.c_str(), name.c_str());
         UnnameObject(obj);
     }
@@ -1763,27 +1759,27 @@ void UnnameObject(Object *obj) {
 }
 
 Object *GetNamedObject(const std::string &name) {
-    return level->get_named(name);
+    return level->getNamed(name);
 }
 
 std::list<Object *> GetNamedGroup(const std::string &name, Object *reference) {
     return level->get_group(name, reference);
 }
 
-void NamePosition(Value po, const string &name) {
+void NamePosition(const Value& po, const std::string &name) {
     level->namePosition(po, name);
 }
 
-Value GetNamedPosition(const string &name) {
+Value GetNamedPosition(const std::string &name) {
     return level->getNamedPosition(name);
 }
 
-PositionList GetNamedPositionList(const string &tmpl, Object *reference) {
+PositionList GetNamedPositionList(const std::string &tmpl, Object *reference) {
     return level->getPositionList(tmpl, reference);
 }
 
 bool IsLevelBorder(const GridPos &p) {
-    return level->is_border(p);
+    return level->isBorder(p);
 }
 
 bool IsInsideLevel(const GridPos &p) {
@@ -1797,7 +1793,7 @@ bool IsInsideLevel(const ecl::V2 &p) {
 /* -------------------- Force fields -------------------- */
 
 void AddForceField(ForceField *ff) {
-    level->forces.push_back(ff);
+    level->forceFields.push_back(ff);
 }
 
 void RemoveForceField(ForceField *ff) {
@@ -1806,7 +1802,7 @@ void RemoveForceField(ForceField *ff) {
 
 /* -------------------- Signals, Messages, Actions -------------------- */
 
-void AddSignal(const GridLoc &srcloc, const GridLoc &dstloc, const string &msg) {
+void AddSignal(const GridLoc &srcloc, const GridLoc &dstloc, const std::string &msg) {
 // this code is for Oxyd and Enigma < 1.1 compatibility only
 #if defined(VERBOSE_MESSAGES)
     fprintf(stderr, "AddSignal src=%i/%i dest=%i/%i msg='%s'\n", srcloc.pos.x, srcloc.pos.y,
@@ -1842,7 +1838,7 @@ void AddSignal(const GridLoc &srcloc, const GridLoc &dstloc, const string &msg) 
             //            dest=%i/%i-%d msg='%s'\n",
             //                srcloc.pos.x, srcloc.pos.y, srcloc.layer, dstloc.pos.x, dstloc.pos.y,
             //                dstloc.layer, msg.c_str());
-            TokenList tl = src->getAttr("destination");  // may be empty or may contain some tokens
+            TokenList tl = src->getAttr("destination").toTokenList();  // may be empty or may contain some tokens
             tl.push_back(GetFloor(dstloc.pos));          // use floor to guarantee existence);
             src->setAttr("destination", tl);
             return;
@@ -1886,8 +1882,8 @@ void AddSignal(const GridLoc &srcloc, const GridLoc &dstloc, const string &msg) 
     }
 
     if (src->isKind("st_actorimpulse")) {
-        ObjectList ol = src->getDefaultedAttr("$!oxyd!destinations", Value(Value::GROUP));
-        ol.push_back(dstValue);
+        ObjectList ol = src->getDefaultedAttr("$!oxyd!destinations", Value(Value::GROUP)).toObjectList();
+        ol.push_back(dstValue.toObject());
         src->setAttr("$!oxyd!destinations", ol);
         return;
     }
@@ -1895,7 +1891,7 @@ void AddSignal(const GridLoc &srcloc, const GridLoc &dstloc, const string &msg) 
     std::string target_key = "target";
     std::string action_key = "action";
 
-    // fourswitch: 4 subsequent AddSignal calls for state specific signals
+    // fourswitch: 4 subsequent AddSignal calls for state-specific signals
     if (src->getObjectType() == Object::STONE &&
         get_id(dynamic_cast<Stone *>(src)) == st_fourswitch) {
         for (int i = NORTH;; i--) {
@@ -1919,10 +1915,10 @@ void AddSignal(const GridLoc &srcloc, const GridLoc &dstloc, const string &msg) 
 
     // this function is supported for old API only - we can assume that target, action
     // are not set by other means than this function:
-    TokenList targets = src->getDefaultedAttr(target_key, Value(Value::TOKENS));
+    TokenList targets = src->getDefaultedAttr(target_key, Value(Value::TOKENS)).toTokenList();
     targets.push_back(dstValue);  // add this target to existing ones
     src->setAttr(target_key, Value(targets));
-    TokenList actions = src->getDefaultedAttr(action_key, Value(Value::TOKENS));
+    TokenList actions = src->getDefaultedAttr(action_key, Value(Value::TOKENS)).toTokenList();
     actions.push_back(Value("signal"));  // add this target to existing ones
     src->setAttr(action_key, actions);
 }
@@ -1952,10 +1948,10 @@ void BroadcastMessage(const std::string &msg, const Value &value, GridLayerBits 
     //    Uint32 start_tick_time = SDL_GetTicks();   // meassure time for level loading
 
     if (grids != 0) {
-        for (int y = 0; y < level->h; ++y) {
-            for (int x = 0; x < level->w; ++x) {
+        for (int y = 0; y < level->height; ++y) {
+            for (int x = 0; x < level->width; ++x) {
                 GridPos p(x, y);
-                Field *f = level->get_field(p);
+                Field *f = level->getField(p);
                 if (to_floors && f->floor)
                     SendMessage(f->floor, msg, value);
                 if (to_items && f->item)
@@ -1966,7 +1962,7 @@ void BroadcastMessage(const std::string &msg, const Value &value, GridLayerBits 
         }
     }
     if (actors) {
-        for (auto &actor : level->actorlist)
+        for (auto &actor : level->actorList)
             SendMessage(actor, msg, value);
     }
     if (others) {
@@ -1980,7 +1976,8 @@ void BroadcastMessage(const std::string &msg, const Value &value, GridLayerBits 
     //         exectime, to_floors, to_items, to_stones, actors, others);
 }
 
-void PerformSecureAction(int senderId, bool isCallback, int targetId, std::string name, Value val) {
+void PerformSecureAction(
+        int senderId, bool isCallback, int targetId, const std::string& name, const Value& val) {
     level->actionList.push_back(Action(senderId, isCallback, targetId, name, val));
 }
 
@@ -1993,7 +1990,7 @@ void explosion(GridPos source, GridPos dest, const char *explosion_item) {
     if (Item *item = GetItem(dest)) {
         if (item->getClass() == "it_explosion") {
             Item *newExplosion = MakeItem(explosion_item);
-            if ((int)(newExplosion->getAttr("state")) > (int)(item->getAttr("state")))
+            if (newExplosion->getAttr("state").toInt() > item->getAttr("state").toInt())
                 SetItem(dest, newExplosion);
             else
                 DisposeObject(newExplosion);
@@ -2075,7 +2072,7 @@ Object *GetObject(const GridLoc &l) {
 }
 
 const Field *GetField(GridPos p) {
-    return level->get_field(p);
+    return level->getField(p);
 }
 
 /* -------------------- Other manipulation -------------------- */
@@ -2084,7 +2081,7 @@ void AddOther(Other *o) {
     level->others.push_back(o);
     Rubberband *rb = dynamic_cast<Rubberband *>(o);
     if (rb != nullptr)
-        level->rubberbands.push_back(rb);
+        level->rubberBands.push_back(rb);
     o->postAddition();
 }
 
@@ -2098,9 +2095,9 @@ void KillOther(Other *o) {
         level->others.erase(i);
         Rubberband *rb = dynamic_cast<Rubberband *>(o);
         if (rb != nullptr) {
-            auto j = find(level->rubberbands.begin(), level->rubberbands.end(), rb);
-            if (j != level->rubberbands.end()) {
-                level->rubberbands.erase(j);
+            auto j = find(level->rubberBands.begin(), level->rubberBands.end(), rb);
+            if (j != level->rubberBands.end()) {
+                level->rubberBands.erase(j);
             }
         }
         DisposeObject(o);
@@ -2110,28 +2107,28 @@ void KillOther(Other *o) {
 /* -------------------- Floor manipulation -------------------- */
 
 void KillFloor(GridPos p) {
-    level->fl_layer.kill(p);
+    level->floorLayer.kill(p);
     if (server::EnigmaCompatibility >= 1.10)
         lua::SetDefaultFloor(lua::LevelState(), p.x, p.y);
 }
 
 Floor *GetFloor(GridPos p) {
-    return level->fl_layer.get(p);
+    return level->floorLayer.get(p);
 }
 
 void SetFloor(GridPos p, Floor *fl) {
-    level->fl_layer.set(p, fl);
+    level->floorLayer.set(p, fl);
     if (!level->preparing_level)
         if (Stone *st = GetStone(p))
             st->on_floor_change();
 }
 
-void CoverFloor(const GridPos &p, std::string kind) {
+void CoverFloor(const GridPos &p, const std::string& kind) {
     Floor *fl = GetFloor(p);
     Item *it = GetItem(p);
-    if (fl == NULL || !fl->isKind("fl_abyss"))
+    if (fl == nullptr || !fl->isKind("fl_abyss"))
         SetFloor(p, MakeFloor(kind.c_str()));
-    if (it != NULL && (it->isKind("it_meditation_hollow") || it->isKind("it_meditation_dent")
+    if (it != nullptr && (it->isKind("it_meditation_hollow") || it->isKind("it_meditation_dent")
             || it->isKind("it_meditation_caldera") || it->isKind("it_crack")
             || it->isKind("it_burnable_ash")))
         KillItem(p);
@@ -2140,35 +2137,34 @@ void CoverFloor(const GridPos &p, std::string kind) {
 /* -------------------- Stone manipulation -------------------- */
 
 Stone *GetStone(GridPos p) {
-    if (Field *f = level->get_field(p))
+    if (Field *f = level->getField(p))
         return f->stone;
     else
-        return level->st_layer.get(p);
+        return level->stoneLayer.get(p);
 }
 
 void KillStone(GridPos p) {
-    level->st_layer.kill(p);
+    level->stoneLayer.kill(p);
     level->changed_stones.push_back(p);
 }
 
 Stone *YieldStone(GridPos p) {
-    Stone *st = level->st_layer.yield(p);
+    Stone *st = level->stoneLayer.yield(p);
     level->changed_stones.push_back(p);
     return st;
 }
 
 void SetStone(GridPos p, Stone *st) {
-    level->st_layer.set(p, st);
+    level->stoneLayer.set(p, st);
     level->changed_stones.push_back(p);
     if (level->registerCriticalPositions)
         level->collisionCriticalPositions.push_back(p);
 }
 
 void ReplaceStone(GridPos p, Stone *st) {
-    Stone *old = level->st_layer.get(p);
-    if (old) {
+    if (Stone* old = level->stoneLayer.get(p)) {
         old->transferName(st);
-        level->st_layer.kill(p);
+        level->stoneLayer.kill(p);
     }
     SetStone(p, st);
 }
@@ -2188,28 +2184,28 @@ void SetScrambleIntensity(int intensity) {
 }
 
 void AddScramble(GridPos p, Direction d) {
-    level->add_scramble(p, d);
+    level->addScramble(p, d);
 }
 
 /* -------------------- Item manipulation -------------------- */
 
 void KillItem(GridPos p) {
     MaybeRecalcLight(p);
-    level->it_layer.kill(p);
+    level->itemLayer.kill(p);
 }
 
 Item *GetItem(GridPos p) {
-    return level->it_layer.get(p);
+    return level->itemLayer.get(p);
 }
 
 Item *YieldItem(GridPos p) {
     MaybeRecalcLight(p);
-    return level->it_layer.yield(p);
+    return level->itemLayer.yield(p);
 }
 
 void SetItem(GridPos p, Item *it) {
     MaybeRecalcLight(p);
-    level->it_layer.set(p, it);
+    level->itemLayer.set(p, it);
 }
 
 /* -------------------- Actor manipulation -------------------- */
@@ -2240,12 +2236,12 @@ void WarpActor(Actor *a, double newx, double newy, bool keep_velocity) {
                                                           "level grid. (And hyperspace travel is "
                                                           "not implemented yet, sorry.)");
     if (!keep_velocity)
-        a->get_actorinfo()->vel = V2();
+        a->getMutableActorInfo().vel = V2();
     a->warp(newpos);
 }
 
 void FastRespawnActor(Actor *a, bool keep_velocity) {
-    const V2 &p = a->get_respawnpos();
+    const V2 &p = a->getRespawnPos();
     WarpActor(a, p[0], p[1], keep_velocity);
 }
 
@@ -2255,8 +2251,8 @@ void RespawnActor(Actor *a) {
 }
 
 Actor *FindActorByID(ActorID id) {
-    for (auto &actor : level->actorlist) {
-        if (get_id(actor) == id)
+    for (Actor* actor : level->actorList) {
+        if (actor->getActorId() == id)
             return actor;
     }
     return nullptr;
@@ -2264,8 +2260,8 @@ Actor *FindActorByID(ActorID id) {
 
 unsigned CountActorsOfKind(ActorID id) {
     unsigned count = 0;
-    for (auto &actor : level->actorlist) {
-        if (get_id(actor) == id)
+    for (Actor* actor : level->actorList) {
+        if (actor->getActorId() == id)
             ++count;
     }
     return count;
@@ -2275,7 +2271,7 @@ Actor *FindOtherMarble(Actor *thisMarble) {
     if (!thisMarble)
         return nullptr;
 
-    switch (get_id(thisMarble)) {
+    switch (thisMarble->getActorId()) {
     case ac_marble_black: return FindActorByID(ac_marble_white);
     case ac_marble_white: return FindActorByID(ac_marble_black);
     default: return nullptr;
@@ -2291,23 +2287,23 @@ bool ExchangeMarbles(Actor *marble1) {
 }
 
 void GrabActor(Actor *a) {
-    a->get_actorinfo()->grabbed = true;
+    a->getMutableActorInfo().grabbed = true;
 }
 
 void ReleaseActor(Actor *a) {
-    a->get_actorinfo()->grabbed = false;
+    a->getMutableActorInfo().grabbed = false;
 }
 
-bool GetActorsInRange(ecl::V2 center, double range, vector<Actor *> &actors) {
-    for (auto &a : level->actorlist) {
-        if (length(a->get_pos() - center) < range)
+bool GetActorsInRange(ecl::V2 center, double range, std::vector<Actor *> &actors) {
+    for (auto &a : level->actorList) {
+        if (length(a->getPos() - center) < range)
             actors.push_back(a);
     }
     return !actors.empty();
 }
 
-bool GetActorsInsideField(const GridPos &pos, vector<Actor *> &actors) {
-    for (auto &a : level->actorlist) {
+bool GetActorsInsideField(const GridPos &pos, std::vector<Actor *> &actors) {
+    for (auto &a : level->actorList) {
         if (a->get_gridpos() == pos)
             actors.push_back(a);
     }
@@ -2315,7 +2311,7 @@ bool GetActorsInsideField(const GridPos &pos, vector<Actor *> &actors) {
 }
 
 void ShatterActorsInsideField(const GridPos &p) {
-    vector<Actor *> actors;
+    std::vector<Actor *> actors;
     GetActorsInsideField(p, actors);
     for (auto &actor : actors)
         SendMessage(actor, "_shatter");
@@ -2345,13 +2341,10 @@ void ChangeMeditation(int diffMeditatists, int diffIndispensableHollows,
   has enough velocity to move the stone. Return either the direction
   the stone should move or NODIR. */
 Direction GetPushDirection (const StoneContact &sc) {
-    ActorInfo *ai  = sc.actor->get_actorinfo();
-    Direction  dir = contact_face(sc);
-
     // Make sure the speed component towards the face of the stone is
     // large enough and pointing towards the stone.
-    if (dir != enigma::NODIR && ai->vel * sc.normal < -4)
-        return reverse(dir);
+    if (contact_face(sc) != NODIR && sc.actor->getVel() * sc.normal < -4)
+        return reverse(contact_face(sc));
     return NODIR;
 }
 
@@ -2373,7 +2366,7 @@ void WorldTick(double dtime) {
 }
 
 void TickFinished(double dtime) {
-    for (auto &actor : level->actorlist)
+    for (auto &actor : level->actorList)
         actor->move_screen();
     for (auto &other : level->others)
         other->tick(dtime);
@@ -2402,131 +2395,115 @@ class ObjectRepos : public ecl::Nocopy {
 public:
     ObjectRepos();
     ~ObjectRepos();
-    void add_templ(const string &name, Object *o);
-    bool has_templ(const string &name);
-    Object *make(const string &name);
-    Object *get_template(const string &name);
+    void addPrototype(const std::string &name, Object *object);
+    bool hasPrototype(const std::string &name);
+    Object *make(const std::string &name);
+    Object *getPrototype(const std::string &name);
 
     void dump_info();
 
 private:
-    typedef std::map<string, Object *> ObjectMap;
+    using ObjectMap = std::map<std::string, Object*>;
     ObjectMap objmap;  // repository of object templates
-    int stonecount, floorcount, itemcount;
 };
 
 }  // namespace
 
-ObjectRepos::ObjectRepos() {
-    stonecount = floorcount = itemcount = 0;
-}
+ObjectRepos::ObjectRepos() = default;
 
 ObjectRepos::~ObjectRepos() {
     ecl::delete_map(objmap.begin(), objmap.end());
 }
 
-void ObjectRepos::add_templ(const string &kind, Object *o) {
-    if (has_templ(kind))
-        enigma::Log << "add_templ: redefinition of object `" << kind << "'.\n";
+void ObjectRepos::addPrototype(const std::string &name, Object *object) {
+    if (hasPrototype(name))
+        Log << "addPrototype: redefinition of object '" << name << "'.\n";
     else
-        objmap[kind] = o;
+        objmap[name] = object;
 }
 
-bool ObjectRepos::has_templ(const string &name) {
+bool ObjectRepos::hasPrototype(const std::string &name) {
     return objmap.find(name) != objmap.end();
 }
 
-Object *ObjectRepos::make(const string &name) {
-    auto i = objmap.find(name);
-    if (i == objmap.end())
-        return nullptr;
-    else
-        return i->second->clone();
+Object *ObjectRepos::make(const std::string &name) {
+    auto it = objmap.find(name);
+    return it == objmap.end() ? nullptr : it->second->clone();
 }
 
-Object *ObjectRepos::get_template(const string &name) {
-    if (objmap.find(name) != objmap.end())
-        return objmap[name];
-    else
-        return nullptr;
+Object *ObjectRepos::getPrototype(const std::string &name) {
+    return objmap.find(name) != objmap.end() ? objmap[name] : nullptr;
 }
 
 /* Generate a list of all available objects and their attributes. */
 void ObjectRepos::dump_info() {
-    for (auto iter = objmap.begin(); iter != objmap.end(); ++iter) {
-        cout << iter->first << "( ";
-        Object *obj = iter->second;
-        const Object::AttribMap &a = obj->get_attribs();
+    for (auto & [name, object] : objmap) {
+        std::cout << name << "( ";
+        const Object::AttribMap &a = object->get_attribs();
         for (const auto &elem : a) {
             if (elem.first != "kind")
-                cout << elem.first << " ";
+                std::cout << elem.first << " ";
         }
-        cout << ")\n";
+        std::cout << ")\n";
     }
 }
 
 namespace {
 
-struct BootKindObject {
-    std::string kind;
+struct NameObjectPair {
+    std::string name;
     Object *object;
-    BootKindObject(std::string name, Object *o) : kind(std::move(name)), object(o) {}
+    NameObjectPair(const std::string& name, Object* o) : name(name), object(o) {}
 };
 
-ObjectRepos *repos;
+ObjectRepos *objectRepos;
 
 }  // namespace
 
+// Register a new kind of object.
+// This function can be called when Enigma boots up. Because this compilation
+// unit may not be initialized yet, we have to collect all objects in a
+// static variable inside the function first and then transfer them to "objectRepos"
+// after all global variables have been initialized.
 void BootRegister(Object *obj, const char *name, bool isRegistration) {
-    static std::list<BootKindObject *> templates;
+    static std::list<NameObjectPair *> prototypes;
     if (isRegistration) {
-        std::string kind = (name != nullptr ? std::string(name) : std::string(""));
-        templates.push_back(new BootKindObject(kind, obj));
+        std::string kind = name != nullptr ? std::string(name) : std::string("");
+        prototypes.push_back(new NameObjectPair(kind, obj));
     } else {
+        if (!objectRepos)
+            objectRepos = new ObjectRepos;
         int count = 0;
-        for (auto &templ : templates) {
-            Register(templ->kind, templ->object);
-            delete templ;
+        for (auto &pair : prototypes) {
+            ASSERT(!pair->name.empty(), XLevelRuntime, "Registration of object without a name");
+            objectRepos->addPrototype(pair->name, pair->object);
+            delete pair;
             count++;
         }
         Log << count << " boot registered object\n";
+        prototypes.clear();
     }
-}
-
-void Register(const std::string &kind, Object *obj) {
-    if (!repos)
-        repos = new ObjectRepos;
-    ASSERT(!kind.empty(), XLevelRuntime, "Registration of object without kind");
-    repos->add_templ(kind, obj);
 }
 
 void Repos_Shutdown() {
-    delete repos;
+    delete objectRepos;
 }
 
 Object *MakeObject(const char *kind) {
-    static Object *last_templ = nullptr;
-    static string last_kind;
-
-    if (last_kind != kind) {
-        last_kind = kind;
-        last_templ = repos->get_template(kind);
-    }
-
-    Object *obj = nullptr;
-    if (last_templ)
-        obj = last_templ->clone();
-    ASSERT(obj != nullptr, XLevelRuntime,
+    Object *object = nullptr;
+    if (Object* prototype = objectRepos->getPrototype(kind))
+        object = prototype->clone();
+    ASSERT(object != nullptr, XLevelRuntime,
            ecl::strf("MakeObject: unknown object name `%s'\n", kind).c_str());
-    return obj;
+    return object;
 }
 
-Object *GetObjectTemplate(const std::string &kind) {
-    if (!repos->has_templ(kind)) {
-        cerr << "GetObjectTemplate: unknown object name `" << kind << "'.\n";
+Object *GetObjectPrototype(const std::string &kind) {
+    if (!objectRepos->hasPrototype(kind)) {
+        std::cerr << "GetObjectTemplate: unknown object name `" << kind << "'.\n";
         return nullptr;
-    } else
-        return repos->get_template(kind);
+    }
+    return objectRepos->getPrototype(kind);
 }
 
 Floor *MakeFloor(const char *kind) {
@@ -2545,11 +2522,11 @@ Actor *MakeActor(const char *kind) {
 }
 
 void DisposeObject(Object *o) {
-    level->dispose_object(o);
+    level->disposeObject(o);
 }
 
 void DumpObjectInfo() {
-    repos->dump_info();
+    objectRepos->dump_info();
 }
 
 }  // namespace enigma

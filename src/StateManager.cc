@@ -40,14 +40,8 @@
 #include <xercesc/util/XMLUniDefs.hpp>
 #include <xercesc/util/PlatformUtils.hpp>
 #include <xercesc/util/XercesVersion.hpp>
-#if _XERCES_VERSION < 30000
-#include <xercesc/framework/LocalFileFormatTarget.hpp>
-#endif
 
-
-using namespace std;
-using namespace enigma;
-XERCES_CPP_NAMESPACE_USE 
+using namespace xercesc;
 
 namespace enigma {
     StateManager *StateManager::theSingleton = 0;
@@ -77,7 +71,7 @@ namespace enigma {
             app.domParserSchemaResolver->addSchemaId("state.xsd","state.xsd");
 
             doc = app.domParser->parseURI(statePath.c_str());
-            if (doc != NULL && !app.domParserErrorHandler->getSawErrors()) {
+            if (doc != nullptr && !app.domParserErrorHandler->getSawErrors()) {
                 propertiesElem = dynamic_cast<DOMElement *>(doc->getElementsByTagName(
                         Utf8ToXML("properties").x_str())->item(0));
                 groupsElem = dynamic_cast<DOMElement *>(doc->getElementsByTagName(
@@ -106,7 +100,7 @@ namespace enigma {
     }
      
     StateManager::~StateManager() {
-        if (doc != NULL)
+        if (doc != nullptr)
             shutdown();
     }
     
@@ -114,7 +108,7 @@ namespace enigma {
         bool result = true;
         std::string errMessage;
         
-        if (doc == NULL)
+        if (doc == nullptr)
             return true;
 
         int count = getInt("Count");
@@ -146,13 +140,7 @@ namespace enigma {
         }
 
         try {
-#if _XERCES_VERSION >= 30000
             result = app.domSer->writeToURI(doc, LocalToXML(& path).x_str());
-#else
-            XMLFormatTarget *myFormTarget = new LocalFileFormatTarget(path.c_str());
-            result = app.domSer->writeNode(myFormTarget, *doc);            
-            delete myFormTarget;   // flush
-#endif
         } catch (const XMLException& toCatch) {
             errMessage = std::string("Exception on save of state: \n") + 
                     XMLtoUtf8(toCatch.getMessage()).c_str() + "\n";
@@ -174,7 +162,7 @@ namespace enigma {
                     std::rename((pathBackup + "~2").c_str(), (pathBackup + "~1").c_str());
                 }
             }
-            cerr << XMLtoLocal(Utf8ToXML(errMessage.c_str()).x_str()).c_str();
+            std::cerr << XMLtoLocal(Utf8ToXML(errMessage.c_str()).x_str()).c_str();
             gui::ErrorMenu m(errMessage, N_("Continue"));
             m.manage();          
         } else
@@ -185,9 +173,9 @@ namespace enigma {
 
     void StateManager::shutdown() {
         save();
-        if (doc != NULL)
+        if (doc != nullptr)
             doc->release();
-        doc = NULL;
+        doc = nullptr;
     }
 
     void StateManager::getGroupNames(std::vector<std::string> *names) {
@@ -374,7 +362,7 @@ namespace enigma {
     
     std::string StateManager::getAnnotation(std::string id) {
         DOMElement * level = getLevel(id);
-        if (level != NULL)
+        if (level != nullptr)
             return XMLtoUtf8(level->getAttribute(Utf8ToXML("annotation").x_str())).c_str(); 
         else
             return "";
@@ -382,7 +370,7 @@ namespace enigma {
     
     void StateManager::setAnnotation(std::string id, std::string annotation) {
         DOMElement * level = getLevel(id);
-        if (level == NULL) {
+        if (level == nullptr) {
             level = doc->createElement (Utf8ToXML("level").x_str());
             level->setAttribute(Utf8ToXML("id").x_str(), Utf8ToXML(id).x_str());
             levelsElem->appendChild(level);
@@ -403,6 +391,6 @@ namespace enigma {
             }
         }
         XMLString::release(&xmlId);
-        return levelFound ? level : NULL;
+        return levelFound ? level : nullptr;
     }
 } // namespace enigma

@@ -42,7 +42,7 @@ namespace enigma {
 void StoneImpulse::setAttr(const std::string& key, const Value &val) {
         if (key == "hollow") {
             if (!isDisplayable()) {
-                if (val.to_bool()) {
+                if (val.toBool()) {
                     objFlags |= OBJBIT_HOLLOW;
                     objFlags &= ~OBJBIT_MOVABLE;
                     objFlags &= ~OBJBIT_STEADY;
@@ -51,7 +51,7 @@ void StoneImpulse::setAttr(const std::string& key, const Value &val) {
             }
         } else if (key == "movable") {
             if (!isDisplayable()) {
-                if (val.to_bool()) {
+                if (val.toBool()) {
                     objFlags |= OBJBIT_MOVABLE;
                     objFlags &= ~OBJBIT_HOLLOW;
                 } else
@@ -59,7 +59,7 @@ void StoneImpulse::setAttr(const std::string& key, const Value &val) {
             }
         } else if (key == "steady") {
             if (!isDisplayable()) {
-                if (val.to_bool()) {
+                if (val.toBool()) {
                     objFlags |= OBJBIT_STEADY;
                     objFlags &= ~OBJBIT_HOLLOW;
                 } else
@@ -86,9 +86,9 @@ void StoneImpulse::setAttr(const std::string& key, const Value &val) {
     }
 
     Value StoneImpulse::message(const Message &m) {
-        if (m.message == "_trigger" && m.value.to_bool()) {
+        if (m.message == "_trigger" && m.value.toBool()) {
             Direction incoming = NODIR;
-            if (m.sender != NULL)
+            if (m.sender != nullptr)
                 incoming = direction_fromto(dynamic_cast<GridObject *>(m.sender)->get_pos(), get_pos());
 
             if (state == IDLE && incoming != NODIR) {
@@ -96,7 +96,7 @@ void StoneImpulse::setAttr(const std::string& key, const Value &val) {
             }
             setIState(EXPANDING, incoming);
             return Value();
-        } else if (m.message == "signal" && (to_double(m.value) != 0 ||
+        } else if (m.message == "signal" && (m.value.toDouble() != 0 ||
                 (server::EnigmaCompatibility < 1.10 /*&& m.value.getType() == Value::NIL*/))) { // hack for old trigger without value
             setIState(EXPANDING);
             return Value();
@@ -201,7 +201,7 @@ void StoneImpulse::setAttr(const std::string& key, const Value &val) {
             if ((objFlags & OBJBIT_MOVABLE) && maybe_push_stone(sc))
                 return;                                      // stone did move on impulse
             else if (!isHollow())
-                sc.actor->send_impulse(sc.stonepos, NODIR);  // impulse on the slightest touch
+                sc.actor->send_impulse(sc.stonePos, NODIR);  // impulse on the slightest touch
         }
     }
 
@@ -209,18 +209,19 @@ void StoneImpulse::setAttr(const std::string& key, const Value &val) {
         if (state == BREAKING)
             return;
 
-        Actor *hitman = NULL;
+        Actor *hitman = nullptr;
         if ((objFlags & OBJBIT_MOVABLE) && (impulse.dir != NODIR)) {
             // move stone without disturbing a running animation
-            display::Model *yieldedModel = display::YieldModel(GridLoc(GRID_STONES, get_pos()));
+            std::unique_ptr<display::Model> yieldedModel =
+                    display::YieldModel(GridLoc(GRID_STONES, get_pos()));
             int oldState = state;
             bool didMove = move_stone(impulse.dir);
             state = oldState;
-            display::SetModel(GridLoc(GRID_STONES, get_pos()), yieldedModel);
+            display::SetModel(GridLoc(GRID_STONES, get_pos()), std::move(yieldedModel));
 
             // pulse only if not pushed with a wand
             hitman = dynamic_cast<Actor*>(impulse.sender);
-            if (hitman == NULL || !player::WieldedItemIs(hitman, "it_magicwand")) {
+            if (hitman == nullptr || !player::WieldedItemIs(hitman, "it_magicwand")) {
                 if (state == IDLE)
                     setIState(EXPANDING, impulse.dir);
                 else if (didMove && state != EXPANDING) {
@@ -237,7 +238,7 @@ void StoneImpulse::setAttr(const std::string& key, const Value &val) {
 
         // direct impulse propagation
         if (objFlags & OBJBIT_MOVABLE && (impulse.dir != NODIR)) {
-            if (hitman != NULL) {
+            if (hitman != nullptr) {
                 objFlags &= ~OBJBIT_PROPAGATE;
                 propagateImpulse(impulse);
             } else
@@ -295,11 +296,11 @@ void StoneImpulse::setAttr(const std::string& key, const Value &val) {
 
     void StoneImpulse::propagateImpulse(const Impulse& impulse) {
         if (!impulse.byWire && impulse.dir != NODIR) {
-            ObjectList olist = getAttr("fellows");
-            int sourceId = getDefaultedAttr("$impulse_source", 0);
+            ObjectList olist = getAttr("fellows").toObjectList();
+            int sourceId = getDefaultedAttr("$impulse_source", 0).toInt();
             for (ObjectList::iterator it = olist.begin(); it != olist.end(); ++it) {
                 Stone *fellow = dynamic_cast<Stone *>(*it);
-                if (fellow != NULL && fellow->getId() != sourceId) {
+                if (fellow != nullptr && fellow->getId() != sourceId) {
                     Impulse wireImpulse(this, fellow->get_pos(), impulse.dir, true);
                     fellow->on_impulse(wireImpulse);
                 }

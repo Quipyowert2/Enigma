@@ -16,7 +16,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-// This file contains the code renders the graphics during the game. This
+// This file contains the code that renders the game graphics. This
 // includes displaying the current landscape with all its objects and the
 // inventory at the bottom of the screen.
 
@@ -34,16 +34,13 @@
 
 #include <algorithm>
 #include <functional>
-#include <cmath>
 #include <iostream>
-
-using namespace std;
-using namespace ecl;
-using namespace display;
-using namespace enigma;
-
 #include "d_engine.hh"
 #include "d_models.hh"
+
+using namespace ecl;
+
+namespace enigma::display {
 
 class dRect {
 public:
@@ -72,12 +69,12 @@ Rect round_grid(const dRect &r, double w, double h) {
 
 namespace {
 
-const int NTILESH = 20;  // Default game screen width in tiles
-const int NTILESV = 13;  // Default game screen height in tiles
+    const int NTILESH = 20;  // Default game screen width in tiles
+    const int NTILESV = 13;  // Default game screen height in tiles
 
-DisplayFlags display_flags = SHOW_ALL;
-GameDisplay *gamedpy = nullptr;
-bool ShowFPS = false;
+    DisplayFlags display_flags = SHOW_ALL;
+    GameDisplay *gamedpy = nullptr;
+    bool ShowFPS = false;
 
 }  // namespace
 
@@ -85,87 +82,82 @@ bool ShowFPS = false;
 // STATUS BAR
 //======================================================================
 
-StatusBarImpl::StatusBarImpl(const ScreenArea &area)
-: Window(area),
-  m_itemarea(),
-  m_models(),
-  player(enigma::YIN),
-  m_changedp(false),
-  m_textview(*enigma::GetFont("statusbarfont")),
-  m_leveltime(0),
-  m_showtime_p(true),
-  m_counter(0),
-  m_showcounter_p(false),
-  m_interruptible(true),
-  m_text_active(false),
-  playerImage(0),
-  playerImageDuration(0),
-  widthInit(false) {
-    const VMInfo *vminfo = video_engine->GetInfo();
-    m_itemarea = vminfo->sb_itemarea;
+StatusBarImpl::StatusBarImpl(const ScreenArea& area)
+    : Window(area), textDisplay(*GetFont("statusbarfont")) {
+    const VMInfo* vminfo = video_engine->GetInfo();
+    itemArea = vminfo->sb_itemarea;
+    timeFont = GetFont("timefont");
+    movesFont = GetFont("smallfont");
+    modesFont = GetFont("modesfont");
+
+    maxWidthDigit = 0;
+    for (int i = 0; i < 10; i++) {
+        widthDigit[i] = timeFont->get_width('0' + i);
+        maxWidthDigit = ecl::Max(maxWidthDigit, widthDigit[i]);
+    }
+    widthColon = timeFont->get_width(':');
+    widthApos = timeFont->get_width('\'');
+    widthQuote = timeFont->get_width('\"');
 }
 
-StatusBarImpl::~StatusBarImpl() {
-    ecl::delete_sequence(m_models.begin(), m_models.end());
-    m_models.clear();
+StatusBarImpl::~StatusBarImpl() = default;
+
+void StatusBarImpl::setTime(double time) {
+    double oldtime = levelTime;
+    levelTime = time;
+    if (showTime && floor(levelTime) - floor(oldtime) >= 1)
+        changed = true;  // update clock
 }
 
-void StatusBarImpl::set_time(double time) {
-    double oldtime = m_leveltime;
-    m_leveltime = time;
-    if (m_showtime_p && floor(m_leveltime) - floor(oldtime) >= 1)
-        m_changedp = true;  // update clock
-}
-
-void StatusBarImpl::hide_text() {
-    if (m_text_active) {
-        m_text_active = false;
-        m_changedp = true;
+void StatusBarImpl::hideText() {
+    if (textActive) {
+        textActive = false;
+        changed = true;
     }
 }
 
-void StatusBarImpl::set_speed(double /*speed*/) {
+void StatusBarImpl::setSpeed(double /*speed*/) {
 }
 
-void StatusBarImpl::set_travelled_distance(double /*distance*/) {
+void StatusBarImpl::setTravelledDistance(double /*distance*/) {
 }
 
-void StatusBarImpl::set_counter(int new_counter) {
-    if (m_showcounter_p && new_counter != m_counter) {
-        m_changedp = true;
-        m_counter = new_counter;
+void StatusBarImpl::setCounter(int newCounter) {
+    if (showMoves && newCounter != moveCounter) {
+        changed = true;
+        moveCounter = newCounter;
     }
 }
 
-void StatusBarImpl::show_move_counter(bool active) {
-    if (active != m_showcounter_p) {
-        m_showcounter_p = active;
-        m_changedp = true;
+void StatusBarImpl::showMoveCounter(bool active) {
+    if (active != showMoves) {
+        showMoves = active;
+        changed = true;
     }
 }
 void StatusBarImpl::setCMode(bool flag) {
     cMode = flag;
-    m_changedp = true;
+    changed = true;
 }
 
 void StatusBarImpl::setBasicModes(std::string flags) {
     basicModes = flags;
-    m_changedp = true;
+    changed = true;
 }
 
 void StatusBarImpl::redraw(ecl::GC &gc, const ScreenArea &r) {
     const VMInfo *vminfo = video_engine->GetInfo();
-    ScreenArea a = get_area();
+    ScreenArea a = getArea();
     clip(gc, intersect(a, r));
 
     blit(gc, a.x, a.y,
-         enigma::GetImage(player == enigma::YIN ? "inventory_yin" : "inventory_yang", ".png"));
+         GetImage(player == YIN ? "inventory_yin" : "inventory_yang", ".png"));
 
     // draw player indicator
     int ts = vminfo->tile_size;
     int xoff = 35 * ts / 8;
     int yoff = 4 * ts / 8 + vminfo->sb_coffsety;
-    blit(gc, a.x + xoff, a.y + yoff, enigma::GetImage("player_switch_anim", ".png"),
+    blit(gc, a.x + xoff, a.y + yoff, GetImage("player_switch_anim", ".png"),
          Rect(0, playerImage * ts, ts, ts));
 
     //     set_color (gc, 255, 0, 0);
@@ -175,173 +167,114 @@ void StatusBarImpl::redraw(ecl::GC &gc, const ScreenArea &r) {
     //     frame (gc, vminfo->sb_movesarea);
     //     frame (gc, vminfo->sb_itemarea);
 
-    int x;
-    int y;
-    std::string text;
-    int xsize_time = 0;
-    int xsize_moves = 0;
-    int xsize_modes = 0;
-    Surface *s_time = nullptr;
-    Surface *s_moves = nullptr;
-    Surface *s_modes = nullptr;
-    Font *timefont = enigma::GetFont("timefont");
-    Font *movesfont = enigma::GetFont("smallfont");
-    Font *modesfont = enigma::GetFont("modesfont");
-    ScreenArea timearea = vminfo->sb_timearea;
-    ScreenArea modesarea = vminfo->sb_modesarea;
-    ScreenArea movesarea = vminfo->sb_movesarea;
+    ScreenArea timeArea = vminfo->sb_timearea;
+    ScreenArea modesArea = vminfo->sb_modesarea;
+    ScreenArea movesArea = vminfo->sb_movesarea;
 
     // draw modes indicators
-    s_modes = modesfont->render(((cMode ? "c" : "") + basicModes));
-    xsize_modes = s_modes->width();
-    x = modesarea.x + modesarea.w - xsize_modes;
-    y = modesarea.y;
-    blit(gc, x, y, s_modes);
-    delete s_modes;
+    std::unique_ptr<Surface> surfaceModes = modesFont->render(((cMode ? "c" : "") + basicModes));
+    {
+        int x = modesArea.x + modesArea.w - surfaceModes->width();
+        int y = modesArea.y;
+        blit(gc, x, y, surfaceModes.get());
+    }
 
-    if (m_showtime_p || m_showcounter_p) {
-        int abstime = ecl::round_nearest<int>(fabs(m_leveltime));
-        //            abstime += 63*60;  //for testing purposes
+    if (showTime || showMoves) {
+        int abstime = ecl::round_nearest<int>(fabs(levelTime));
+        // abstime += 10*63*60;  //for testing purposes
+        // Clamp time to a maximum of 9 hours, 59 minutes, and 59 seconds
+        abstime = std::min(abstime, 9 * 3600 + 59 * 60 + 59);
         int hours = abstime / 3600;
         int minutes = (abstime - 3600 * hours) / 60;
         int seconds = abstime % 60;
-        bool showHours = false;
-        bool showMinutes = true;
-        bool showSeconds = true;
+        bool showHours = hours != 0;
+        bool showMinutes = hours != 0 || minutes >= 10;
+        bool showSeconds = hours == 0 || vminfo->tile_size >= 40;
 
-        if (hours >= 10) {
-            hours = 9;
-            minutes = 59;
-            seconds = 59;
-        }
-        if (m_showtime_p) {
-
-            if (!widthInit) {
-                maxWidthDigit = 0;
-                for (int i = 0; i < 10; i++) {
-                    widthDigit[i] = timefont->get_width('0' + i);
-                    maxWidthDigit = ecl::Max(maxWidthDigit, widthDigit[i]);
-                }
-                widthColon = timefont->get_width(':');
-                widthApos = timefont->get_width('\'');
-                widthQuote = timefont->get_width('\"');
-
-                widthInit = true;
-            }
-
-            if (hours == 0) {
-                if (minutes < 10)
-                    showMinutes = false;
-            } else {
-                showHours = true;
-                if (vminfo->tile_size >= 40) {
-                    showMinutes = true;
-                } else {
-                    showSeconds = false;
-                }
-            }
-            xsize_time = (showHours ? maxWidthDigit + widthColon : 0) +
-                         (showMinutes ? maxWidthDigit : 0) + maxWidthDigit + widthApos +
-                         (showSeconds ? 2 * maxWidthDigit + widthQuote : 0);
+        int timeWidth = 0;
+        if (showTime) {
+            timeWidth = (showHours ? maxWidthDigit + widthColon : 0)
+                    + (showMinutes ? maxWidthDigit : 0) + maxWidthDigit + widthApos
+                    + (showSeconds ? 2 * maxWidthDigit + widthQuote : 0);
         }
 
-        if (m_showcounter_p) {
-            text = ecl::strf("%d", m_counter);
-            s_moves = movesfont->render(text);
-            xsize_moves = s_moves->width();
-        }
+        std::unique_ptr<Surface> surfaceMoves;
+        if (showMoves)
+            surfaceMoves = movesFont->render(ecl::strf("%d", moveCounter));
 
-        if (m_showtime_p) {
-            if (m_showcounter_p) {  // time + moves
-                x = movesarea.x + (movesarea.w - xsize_moves) / 2;
-                y = movesarea.y + (movesarea.h + timefont->get_lineskip()) / 2 -
-                    movesfont->get_lineskip() - 4;
-                blit(gc, x, y, s_moves);
-
-                x = timearea.x + (movesarea.x - timearea.x - xsize_time) / 2;
-                y = timearea.y + (timearea.h - timefont->get_lineskip()) / 2;
-            } else {  // only time
-                x = timearea.x + (timearea.w - xsize_time) / 2;
-                y = timearea.y + (timearea.h - timefont->get_lineskip()) / 2;
+        if (showTime) {
+            if (showMoves) {  // time + moves
+                int x = movesArea.x + (movesArea.w - surfaceMoves->width()) / 2;
+                int y = movesArea.y + (movesArea.h + timeFont->get_lineskip()) / 2
+                        - movesFont->get_lineskip() - 4;
+                blit(gc, x, y, surfaceMoves.get());
             }
-            // draw time in pixel stable positions
+
+            // draw time in pixel-stable positions
+            int x = showMoves ? timeArea.x + (movesArea.x - timeArea.x - timeWidth) / 2
+                : timeArea.x + (timeArea.w - timeWidth) / 2;
+            int y = timeArea.y + (timeArea.h - timeFont->get_lineskip()) / 2;
             if (showHours) {
-                text = ecl::strf("%d:", hours);
-                s_time = timefont->render(text);
-                blit(gc, x + maxWidthDigit - widthDigit[hours], y, s_time);
-                delete s_time;
+                blit(gc, x + maxWidthDigit - widthDigit[hours], y,
+                        timeFont->render(ecl::strf("%d:", hours)).get());
                 x += maxWidthDigit + widthColon;
             }
             if (showMinutes) {
-                text = ecl::strf("%02d", minutes);
-                s_time = timefont->render(text);
-                blit(gc, x + maxWidthDigit - widthDigit[minutes / 10], y, s_time);
+                blit(gc, x + maxWidthDigit - widthDigit[minutes / 10], y,
+                        timeFont->render(ecl::strf("%02d", minutes)).get());
                 x += 2 * maxWidthDigit;
             } else {
-                text = ecl::strf("%d", minutes);
-                s_time = timefont->render(text);
-                blit(gc, x + maxWidthDigit - widthDigit[minutes % 10], y, s_time);
+                blit(gc, x + maxWidthDigit - widthDigit[minutes % 10], y,
+                        timeFont->render(ecl::strf("%d", minutes)).get());
                 x += maxWidthDigit;
             }
-            delete s_time;
-            s_time = timefont->render(std::string("'"));
-            blit(gc, x, y, s_time);
+            blit(gc, x, y, timeFont->render(std::string("'")).get());
             x += widthApos;
             if (showSeconds) {
-                delete s_time;
-                text = ecl::strf("%02d", seconds);
-                s_time = timefont->render(text);
-                blit(gc, x + maxWidthDigit - widthDigit[seconds / 10], y, s_time);
-                delete s_time;
+                blit(gc, x + maxWidthDigit - widthDigit[seconds / 10], y,
+                        timeFont->render(ecl::strf("%02d", seconds)).get());
                 x += 2 * maxWidthDigit;
-                s_time = timefont->render(std::string("\""));
-                blit(gc, x, y, s_time);
+                blit(gc, x, y, timeFont->render(std::string("\"")).get());
             }
         } else {  // only moves
-            x = timearea.x + (timearea.w - xsize_moves) / 2;
-            y = timearea.y + (timearea.h - movesfont->get_lineskip()) / 2;
-            blit(gc, x, y, s_moves);
+            int x = timeArea.x + (timeArea.w - surfaceMoves->width()) / 2;
+            int y = timeArea.y + (timeArea.h - movesFont->get_lineskip()) / 2;
+            blit(gc, x, y, surfaceMoves.get());
         }
-
-        delete s_moves;
-        delete s_time;
     }
 
-    if (m_text_active) {
-        m_textview.draw(gc, r);
+    if (textActive) {
+        textDisplay.draw(gc, r);
     } else {
         client::Msg_FinishedText();
-        int itemsize = static_cast<int>(vminfo->tile_size * 1.125);
-        x = m_itemarea.x;
-        for (auto m : m_models) {
-            m->draw(gc, x, m_itemarea.y);
-            x += itemsize;
+        int itemSize = static_cast<int>(vminfo->tile_size * 1.125);
+        int x = itemArea.x;
+        for (auto &model : itemModels) {
+            model->draw(gc, x, itemArea.y);
+            x += itemSize;
         }
     }
-    m_changedp = false;
+    changed = false;
 }
 
-void StatusBarImpl::set_inventory(enigma::Player activePlayer,
-                                  const std::vector<std::string> &modelnames) {
+void StatusBarImpl::setInventory(Player activePlayer, const std::vector<std::string>& modelNames) {
     player = activePlayer;
-    if (m_text_active && m_interruptible) {
-        hide_text();
+    if (textActive && interruptible) {
+        hideText();
     }
 
-    ecl::delete_sequence(m_models.begin(), m_models.end());
-    m_models.clear();
-
-    for (auto &modelname : modelnames) {
-        m_models.push_back(MakeModel(modelname));
+    itemModels.clear();
+    for (auto &modelName : modelNames) {
+        itemModels.push_back(MakeModel(modelName));
     }
-    m_changedp = true;
+    changed = true;
 }
 
-void StatusBarImpl::show_text(const std::string &str, bool scrolling, double duration) {
-    m_textview.set_text(str, scrolling, duration);
-    m_interruptible = false;
-    m_text_active = true;
-    m_changedp = true;
+void StatusBarImpl::showText(const std::string &str, bool scrolling, double duration) {
+    textDisplay.setText(str, scrolling, duration);
+    interruptible = false;
+    textActive = true;
+    changed = true;
 }
 
 void StatusBarImpl::tick(double dtime) {
@@ -350,75 +283,63 @@ void StatusBarImpl::tick(double dtime) {
     if ((player * 12 != playerImage) && (playerImageDuration > 0.1)) {
         playerImage = (playerImage + 1) % 24;
         playerImageDuration = 0;
-        m_changedp = true;
+        changed = true;
     }
 
     // Update text display
-    if (m_text_active) {
-        m_textview.tick(dtime);
-        m_changedp = m_changedp || m_textview.has_changed();
-        if (m_textview.has_finished()) {
-            m_text_active = false;
-            m_changedp = true;
+    if (textActive) {
+        textDisplay.tick(dtime);
+        changed = changed || textDisplay.hasChanged();
+        if (textDisplay.hasFinished()) {
+            textActive = false;
+            changed = true;
         }
     }
 }
 
-void StatusBarImpl::new_world() {
-    delete_sequence(m_models.begin(), m_models.end());
-    m_models.clear();
-    m_leveltime = 0;
-    m_text_active = false;
-    m_changedp = true;
-    player = enigma::YIN;
+void StatusBarImpl::newWorld() {
+    itemModels.clear();
+    levelTime = 0;
+    textActive = false;
+    changed = true;
+    player = YIN;
     playerImage = 0;
     playerImageDuration = 0;
 }
 
 /* -------------------- TextDisplay implementation -------------------- */
 
-TextDisplay::TextDisplay(Font &f)
-: area(),
-  text(),
-  changedp(false),
-  finishedp(true),
-  pingpong(false),
-  showscroll(false),
-  xoff(0),
-  scrollspeed(DEFAULT_TextSpeed * FACTOR_TextSpeed),
-  textsurface(nullptr),
-  font(f) {
+TextDisplay::TextDisplay(Font& font)
+    : scrollSpeed(DEFAULT_TextSpeed * FACTOR_TextSpeed), font(font) {
     const VMInfo *vminfo = video_engine->GetInfo();
     area = vminfo->sb_textarea;
-    time = maxtime = 0;
-    // Note: "scrollspeed" is not yet initialised with
-    //   display::GetTextSpeed() * FACTOR_TextSpeed but a
-    //   default value instead, because Application State
-    //   Manager has not been initialised at this point
+    // Note: "scrollSpeed" is not yet initialized with
+    //   GetTextSpeed() * FACTOR_TextSpeed but a
+    //   default value because Application State
+    //   Manager has not been initialized at this point
     //   yet: This would crash.
 }
 
-void TextDisplay::set_text(const string &t, bool scrolling, double duration) {
-    text = t;
-    textsurface.reset(font.render(text));
+void TextDisplay::setText(const std::string &newText, bool scrolling, double duration) {
+    text = newText;
+    textSurface = font.render(text);
     pingpong = false;
-
     time = 0;
 
     if (scrolling) {
         if (duration <= 0) {
             xoff = -area.w;
-            scrollspeed = display::GetTextSpeed() * FACTOR_TextSpeed;
+            scrollSpeed = GetTextSpeed() * FACTOR_TextSpeed;
         } else {
-            // Showscroll mode: first show string then scoll it out
+            // Showscroll mode: first show the string, then scroll it out
             showscroll = true;
-            scrollspeed = 0;
-            if (area.w < textsurface->width()) {
+            scrollSpeed = 0;
+            if (area.w < textSurface->width()) {
                 // start left adjusted for long strings
                 xoff = 0;
             } else {
                 // start centered for short strings
-                xoff = -(area.w - textsurface->width()) / 2;
+                xoff = -(area.w - textSurface->width()) / 2;
             }
         }
     }
@@ -429,18 +350,18 @@ void TextDisplay::set_text(const string &t, bool scrolling, double duration) {
         maxtime = 1e20;  // "infinite" for all practical purposes
 
     if (!scrolling) {  // centered text string
-        if (area.w < textsurface->width()) {
+        if (area.w < textSurface->width()) {
             pingpong = true;
-            scrollspeed = (textsurface->width() - area.w) / duration;
+            scrollSpeed = (textSurface->width() - area.w) / duration;
             xoff = 0;
         } else {
-            xoff = -(area.w - textsurface->width()) / 2;
-            scrollspeed = 0;
+            xoff = -(area.w - textSurface->width()) / 2;
+            scrollSpeed = 0;
         }
     }
 
-    finishedp = false;
-    changedp = true;
+    finished = false;
+    changed = true;
 }
 
 void TextDisplay::tick(double dtime) {
@@ -448,26 +369,25 @@ void TextDisplay::tick(double dtime) {
     if (time > maxtime) {
         if (showscroll) {
             showscroll = false;
-            scrollspeed = display::GetTextSpeed() * FACTOR_TextSpeed;
+            scrollSpeed = GetTextSpeed() * FACTOR_TextSpeed;
             maxtime = 1e20;  // "infinite" for all practical purposes
         } else {
-            finishedp = true;
-            changedp = true;
+            finished = true;
+            changed = true;
         }
     } else {
-        int oldxoff = round_nearest<int>(xoff);
-        xoff += dtime * scrollspeed;
-        int newxoff = round_nearest<int>(xoff);
-        changedp = newxoff != oldxoff;
+        int oldXOff = round_nearest<int>(xoff);
+        xoff += dtime * scrollSpeed;
+        int newXOff = round_nearest<int>(xoff);
+        changed = newXOff != oldXOff;
         if (pingpong) {
-            if (scrollspeed > 0 && area.w + newxoff >= textsurface->width()) {
-                scrollspeed = -scrollspeed;
-            } else if (scrollspeed < 0 && newxoff <= 0) {
-                scrollspeed = -scrollspeed;
+            if ((scrollSpeed > 0 && area.w + newXOff >= textSurface->width())
+                    || (scrollSpeed < 0 && newXOff <= 0)) {
+                scrollSpeed = -scrollSpeed;
             }
-        } else if (xoff >= textsurface->width()) {
-            finishedp = true;
-            changedp = true;
+        } else if (xoff >= textSurface->width()) {
+            finished = true;
+            changed = true;
         }
     }
 }
@@ -476,7 +396,7 @@ void TextDisplay::draw(ecl::GC &gc, const ScreenArea &r) {
     clip(gc, intersect(area, r));
     set_color(gc, 0, 0, 0);
     box(gc, area);
-    if (Surface *s = textsurface.get())
+    if (Surface *s = textSurface.get())
         blit(gc, area.x - round_nearest<int>(xoff), area.y, s);
 }
 
@@ -487,18 +407,15 @@ void TextDisplay::draw(ecl::GC &gc, const ScreenArea &r) {
 DisplayEngine::DisplayEngine(int tilew, int tileh)
 : m_tilew(tilew),
   m_tileh(tileh),
-  m_offset(),
-  m_new_offset(),
-  m_area(),
-  m_width(0),
-  m_height(0),
-  m_redrawp(0, 0) {
-    m_area = video_engine->GetInfo()->area;
-    m_screenoffset[0] = m_screenoffset[1] = 0;
+  width(0),
+  height(0),
+  mustRedraw(0, 0) {
+    area = video_engine->GetInfo()->area;
+    screenOffset[0] = screenOffset[1] = 0;
 }
 
 DisplayEngine::~DisplayEngine() {
-    delete_sequence(m_layers.begin(), m_layers.end());
+    delete_sequence(layers.begin(), layers.end());
 }
 
 void DisplayEngine::set_tilesize(int w, int h) {
@@ -506,30 +423,30 @@ void DisplayEngine::set_tilesize(int w, int h) {
     m_tileh = h;
 }
 
-void DisplayEngine::add_layer(DisplayLayer *l) {
-    l->set_engine(this);
-    m_layers.push_back(l);
+void DisplayEngine::add_layer(DisplayLayer *layer) {
+    layer->setEngine(this);
+    layers.push_back(layer);
 }
 
-void DisplayEngine::set_offset(const V2 &off) {
-    m_offset = m_new_offset = off;
-    world_to_video(off, &m_screenoffset[0], &m_screenoffset[1]);
+void DisplayEngine::setOffset(const V2 &off) {
+    offset = newOffset = off;
+    world_to_video(off, &screenOffset[0], &screenOffset[1]);
 }
 
 void DisplayEngine::move_offset(const ecl::V2 &off) {
-    m_new_offset = off;
+    newOffset = off;
 }
 
 /*! Scroll the screen contents and mark the newly exposed regions for
-  redraw.  This method assumes that the screen contents were not
+  redrawing.  This method assumes that the screen contents were not
   modified externally since the last call to update_offset(). */
-void DisplayEngine::update_offset() {
+void DisplayEngine::updateOffset() {
     ecl::Screen *screen = video_engine->GetScreen();
 
-    int oldx = m_screenoffset[0];
-    int oldy = m_screenoffset[1];
+    int oldx = screenOffset[0];
+    int oldy = screenOffset[1];
     int newx, newy;
-    world_to_video(m_new_offset, &newx, &newy);
+    world_to_video(newOffset, &newx, &newy);
 
     if (newx != oldx || newy != oldy) {
         // TODO: Up to Enigma 1.21, we used the following code:
@@ -560,11 +477,11 @@ void DisplayEngine::update_offset() {
         // Unfortunately, switching to SDL 2 created problems with blitting
         // from one surface to the same. For the time being, we simply
         // redraw the whole surface:
-        set_offset(V2(newx / double(m_tilew), newy / double(m_tileh)));
+        setOffset(V2(newx / double(m_tilew), newy / double(m_tileh)));
         mark_redraw_screen();
-        // This is very ressource hungry, but only marginally slower than 
+        // This is very resource-hungry, but only marginally slower than
         // blitting first to a temporary surface, and then back to the
-        // video screen. Best solution would be to have two surfaces to
+        // video screen. The best solution would be to have two surfaces to
         // blit to in class Screen, and smooth scrolling would alternate
         // between these; or to keep the whole level in one surface and
         // blit from there to the screen.
@@ -572,45 +489,46 @@ void DisplayEngine::update_offset() {
 }
 
 void DisplayEngine::set_screen_area(const ecl::Rect &r) {
-    m_area = r;
+    area = r;
 }
 
 void DisplayEngine::new_world(int w, int h) {
-    m_width = w;
-    m_height = h;
-    m_offset = m_new_offset = V2();
-    m_screenoffset[0] = m_screenoffset[1] = 0;
-    m_redrawp.resize(w, h, 1);
+    width = w;
+    height = h;
+    offset = newOffset = V2();
+    screenOffset[0] = screenOffset[1] = 0;
+    mustRedraw.resize(w, h);
+    mustRedraw.fill(1);
 
-    for (auto &layer : m_layers)
-        layer->new_world(w, h);
+    for (auto &layer : layers)
+        layer->newWorld(w, h);
 }
 
 void DisplayEngine::tick(double dtime) {
-    for (auto &layer : m_layers)
+    for (auto &layer : layers)
         layer->tick(dtime);
 }
 
 void DisplayEngine::world_to_screen(const V2 &pos, int *x, int *y) {
-    *x = round_nearest<int>(pos[0] * m_tilew) - m_screenoffset[0] + get_area().x;
-    *y = round_nearest<int>(pos[1] * m_tileh) - m_screenoffset[1] + get_area().y;
+    *x = round_nearest<int>(pos[0] * m_tilew) - screenOffset[0] + get_area().x;
+    *y = round_nearest<int>(pos[1] * m_tileh) - screenOffset[1] + get_area().y;
 }
 
-void DisplayEngine::world_to_video(const ecl::V2 &pos, int *x, int *y) {
+void DisplayEngine::world_to_video(const ecl::V2 &pos, int *x, int *y) const {
     *x = round_nearest<int>(pos[0] * m_tilew);
     *y = round_nearest<int>(pos[1] * m_tileh);
 }
 
 void DisplayEngine::video_to_screen(int x, int y, int *xx, int *yy) {
-    *xx = x - m_screenoffset[0] + get_area().x;
-    *yy = y - m_screenoffset[1] + get_area().y;
+    *xx = x - screenOffset[0] + get_area().x;
+    *yy = y - screenOffset[1] + get_area().y;
 }
 
-/* Calculate the smallest rectangle `s' in world space aligned to
-   tiles that contains a certain rectangle `r' in video space.  This
+/* Calculate the smallest rectangle 's' in world space aligned to
+   tiles that contains a certain rectangle 'r' in video space.  This
    function is used for calculating the region that needs to be
-   updated when a sprite with extension `r' is moved on the screen. */
-void DisplayEngine::video_to_world(const ecl::Rect &r, Rect &s) {
+   updated when a sprite with extension 'r' is moved on the screen. */
+void DisplayEngine::videoToWorld(const ecl::Rect &r, Rect &s) const {
     dRect dr(r.x, r.y, r.w, r.h);
     s = round_grid(dr, get_tilew(), get_tileh());
 }
@@ -622,44 +540,44 @@ ScreenArea DisplayEngine::world_to_screen(const WorldArea &a) {
 }
 
 WorldArea DisplayEngine::screen_to_world(const ScreenArea &a) {
-    int sx = m_screenoffset[0] + a.x - get_area().x;
-    int sy = m_screenoffset[1] + a.y - get_area().y;
+    int sx = screenOffset[0] + a.x - get_area().x;
+    int sy = screenOffset[1] + a.y - get_area().y;
 
     int x1 = Max(0, sx / m_tilew);
     int y1 = Max(0, sy / m_tileh);
-    int x2 = Min(m_width, (sx + a.w + m_tilew - 1) / m_tilew);
-    int y2 = Min(m_height, (sy + +a.h + m_tileh - 1) / m_tileh);
+    int x2 = Min(width, (sx + a.w + m_tilew - 1) / m_tilew);
+    int y2 = Min(height, (sy + +a.h + m_tileh - 1) / m_tileh);
 
     return WorldArea(x1, y1, x2 - x1, y2 - y1);
 }
 
 V2 DisplayEngine::to_world(const V2 &pos) {
-    return m_offset + V2((pos[0] - get_area().x) / m_tilew, (pos[1] - get_area().y) / m_tileh);
+    return offset + V2((pos[0] - get_area().x) / m_tilew, (pos[1] - get_area().y) / m_tileh);
 }
 
-void DisplayEngine::mark_redraw_area(const WorldArea &wa, int delay) {
-    int x2 = Min(m_width, wa.x + wa.w);
-    int y2 = Min(m_height, wa.y + wa.h);
+void DisplayEngine::markRedrawArea(const WorldArea &wa, int delay) {
+    int x2 = Min(width, wa.x + wa.w);
+    int y2 = Min(height, wa.y + wa.h);
     for (int x = Max(0, wa.x); x < x2; x++)
         for (int y = Max(0, wa.y); y < y2; y++) {
-            int d = m_redrawp(x, y);
+            int d = mustRedraw(x, y);
             if (d == 0 || 1 + delay < d)
-                m_redrawp(x, y) = 1 + delay;
+                mustRedraw(x, y) = 1 + delay;
         }
 }
 
 void DisplayEngine::mark_redraw_screen() {
-    mark_redraw_area(screen_to_world(m_area));
+    markRedrawArea(screen_to_world(area));
 }
 
-void DisplayEngine::draw_all(ecl::GC &gc) {
+void DisplayEngine::drawAll(ecl::GC &gc) {
     WorldArea wa = screen_to_world(get_area());
 
-    // Fill screen area not covered by world
+    // Fill screen the area not covered by world
     {
         RectList rl;
         rl.push_back(get_area());
-        rl.sub(world_to_screen(WorldArea(0, 0, m_width, m_height)));
+        rl.sub(world_to_screen(WorldArea(0, 0, width, height)));
         set_color(gc, 200, 0, 200);
         for (auto &rect : rl)
             box(gc, rect);
@@ -667,11 +585,11 @@ void DisplayEngine::draw_all(ecl::GC &gc) {
 
     int xpos, ypos;
     world_to_screen(V2(wa.x, wa.y), &xpos, &ypos);
-    for (auto &layer : m_layers) {
+    for (auto &layer : layers) {
         clip(gc, get_area());
-        layer->prepare_draw(wa);
+        layer->prepareDraw(wa);
         layer->draw(gc, wa, xpos, ypos);
-        layer->draw_onepass(gc);
+        layer->drawSinglePass(gc);
     }
 }
 
@@ -686,12 +604,12 @@ void DisplayEngine::update_layer(DisplayLayer *l, WorldArea wa) {
     int xpos, ypos0;
     world_to_screen(V2(wa.x, wa.y), &xpos, &ypos0);
 
-    l->prepare_draw(wa);
+    l->prepareDraw(wa);
     for (int x = wa.x; x < x2; x++, xpos += m_tilew) {
         int ypos = ypos0;
         for (int y = wa.y; y < y2; y++, ypos += m_tileh) {
-            if (m_redrawp(x, y) == 1) {
-                if (y < y2m1 && m_redrawp(x, y + 1) == 1) {
+            if (mustRedraw(x, y) == 1) {
+                if (y < y2m1 && mustRedraw(x, y + 1) == 1) {
                     l->draw(gc, WorldArea(x, y, 1, 2), xpos, ypos);
                     y++;
                     ypos += m_tileh;
@@ -700,31 +618,31 @@ void DisplayEngine::update_layer(DisplayLayer *l, WorldArea wa) {
             }
         }
     }
-    l->draw_onepass(gc);
+    l->drawSinglePass(gc);
 }
 
-void DisplayEngine::update_screen() {
+void DisplayEngine::updateScreen() {
     ecl::Screen *screen = video_engine->GetScreen();
     GC gc(screen->get_surface());
 
-    if (m_new_offset != m_offset) {
-        update_offset();
-        m_new_offset = m_offset;
+    if (newOffset != offset) {
+        updateOffset();
+        newOffset = offset;
     }
 
     Rect area = get_area();
     clip(gc, area);
 
     WorldArea wa = screen_to_world(area);
-    for (auto &layer : m_layers) {
+    for (auto &layer : layers) {
         update_layer(layer, wa);
     }
     int x2 = wa.x + wa.w;
     int y2 = wa.y + wa.h;
     for (int x = wa.x; x < x2; x++) {
         for (int y = wa.y; y < y2; y++) {
-            if (m_redrawp(x, y) >= 1) {
-                if ((m_redrawp(x, y) -= 1) == 0)
+            if (mustRedraw(x, y) >= 1) {
+                if ((mustRedraw(x, y) -= 1) == 0)
                     screen->update_rect(world_to_screen(WorldArea(x, y, 1, 1)));
             }
         }
@@ -733,123 +651,114 @@ void DisplayEngine::update_screen() {
 
 /* -------------------- ModelLayer -------------------- */
 
-void ModelLayer::maybe_redraw_model(Model *m, bool immediately) {
+void ModelLayer::maybeRedrawModel(Model *m, bool immediately) {
     Rect videoarea;
-    if (m->has_changed(videoarea)) {
-        int delay = immediately ? 0 : enigma::IntegerRand(0, 2, false);
-        WorldArea wa;
-        get_engine()->video_to_world(videoarea, wa);
-        get_engine()->mark_redraw_area(wa, delay);
+    if (m->hasChanged(videoarea)) {
+        int delay = immediately ? 0 : IntegerRand(0, 2, false);
+        WorldArea worldArea;
+        getEngine()->videoToWorld(videoarea, worldArea);
+        getEngine()->markRedrawArea(worldArea, delay);
     }
 }
 
 void ModelLayer::activate(Model *m) {
-    list<Model *> &am = m_active_models_new;
-    am.push_back(m);
+    newActiveModels.push_back(m);
 }
 
-void ModelLayer::deactivate(Model *m) {
-    list<Model *> &am = m_active_models;
-    auto i = find(am.begin(), am.end(), m);
-    if (i == am.end()) {
-        m_active_models_new.remove(m);
+void ModelLayer::deactivate(Model *model) {
+    std::list<Model *> &am = activeModels;
+    auto it = find(am.begin(), am.end(), model);
+    if (it == am.end()) {
+        newActiveModels.remove(model);
     } else {
-        *i = nullptr;
+        *it = nullptr;
     }
 }
 
-void ModelLayer::new_world(int, int) {
-    m_active_models.clear();
-    m_active_models_new.clear();
+void ModelLayer::newWorld(int, int) {
+    activeModels.clear();
+    newActiveModels.clear();
 }
 
 void ModelLayer::tick(double dtime) {
-    ModelList &am = m_active_models;
-
-    am.remove(nullptr);
-    am.remove_if(std::mem_fn(&Model::is_garbage));
+    activeModels.remove(nullptr);
+    activeModels.remove_if(std::mem_fn(&Model::hasFinished));
 
     // Append new active models to list
-    am.splice(am.end(), m_active_models_new);
+    activeModels.splice(activeModels.end(), newActiveModels);
 
-    // for_each does not work; animation may remove itself during a tick. This
-    // may happen for example when a model callback decides to replace the old
-    // model by another one.
-    for (ModelList::iterator i = am.begin(); i != am.end(); ++i) {
-        if (Model *m = *i) {
-            m->tick(dtime);
+    // We cannot use a foreach loop here because animations can remove themselves
+    // during a tick. This may happen, for example, when a model callback decides
+    // to replace the old model with another one.
+    for (auto it = activeModels.begin(); it != activeModels.end(); ++it) {
+        if (Model *model = *it) {
+            model->tick(dtime);
 
-            // We have to check (*i) again because the list of active
-            // models can change during a tick!
-            if ((m = *i))
-                maybe_redraw_model(m);
+            // We have to check (*it) again because the list of active
+            // models may have changed!
+            if ((model = *it))
+                maybeRedrawModel(model);
         }
     }
 }
 
 /* -------------------- GridLayer -------------------- */
 
-DL_Grid::DL_Grid(int redrawsize) : m_models(0, 0), m_redrawsize(redrawsize) {
+DL_Grid::DL_Grid(int redrawSize) : modelArray(0, 0), m_redrawSize(redrawSize) {
 }
 
-DL_Grid::~DL_Grid() {
-    delete_sequence(m_models.begin(), m_models.end());
-}
+DL_Grid::~DL_Grid() = default;
 
-void DL_Grid::new_world(int w, int h) {
-    ModelLayer::new_world(w, h);
-    delete_sequence(m_models.begin(), m_models.end());
-    m_models.resize(w, h, nullptr);
+void DL_Grid::newWorld(int w, int h) {
+    ModelLayer::newWorld(w, h);
+    modelArray.resize(w, h);
 }
 
 void DL_Grid::mark_redraw(int x, int y) {
-    get_engine()->mark_redraw_area(WorldArea(x, y, m_redrawsize, m_redrawsize));
+    getEngine()->markRedrawArea(WorldArea(x, y, m_redrawSize, m_redrawSize));
 }
 
-void DL_Grid::set_model(int x, int y, Model *m) {
-    if (!(x >= 0 && y >= 0 && (unsigned)x < m_models.width() && (unsigned)y < m_models.height())) {
-        delete m;  // model is owned by DL_Grid!
+void DL_Grid::setModel(int x, int y, std::unique_ptr<Model> model) {
+    if (!(x >= 0 && y >= 0 && x < modelArray.width() && y < modelArray.height())) {
         return;
     }
 
-    if (m_models(x, y) != m) {
-        if (Model *oldm = m_models(x, y)) {
-            oldm->remove(this);
-            delete oldm;
+    if (modelArray(x, y) != model) {
+        if (Model* oldModel = modelArray(x, y).get()) {
+            oldModel->removeFromLayer(this);
         }
         mark_redraw(x, y);
-        m_models(x, y) = m;
-        if (m) {
+        Model* newModel = model.get();
+        modelArray(x, y) = std::move(model);
+        if (newModel) {
             int vx, vy;
-            get_engine()->world_to_video(V2(x, y), &vx, &vy);
-            m->expose(this, vx, vy);
+            getEngine()->world_to_video(V2(x, y), &vx, &vy);
+            newModel->expose(this, vx, vy);
         }
     }
 }
 
-Model *DL_Grid::get_model(int x, int y) {
-    return m_models(x, y);
+Model *DL_Grid::getModel(int x, int y) {
+    return modelArray(x, y).get();
 }
 
-Model *DL_Grid::yield_model(int x, int y) {
-    Model *m = get_model(x, y);
-    if (m)
-        m->remove(this);
-    m_models(x, y) = nullptr;
+std::unique_ptr<Model> DL_Grid::yieldModel(int x, int y) {
+    if (Model *model = getModel(x, y))
+        model->removeFromLayer(this);
     mark_redraw(x, y);
-    return m;
+    return std::move(modelArray(x, y));
 }
 
 void DL_Grid::draw(ecl::GC &gc, const WorldArea &a, int destx, int desty) {
     int x2 = a.x + a.w;
     int y2 = a.y + a.h;
-    int tilew = get_engine()->get_tilew();
-    int tileh = get_engine()->get_tileh();
+    int tilew = getEngine()->get_tilew();
+    int tileh = getEngine()->get_tileh();
     int xpos = destx;
     for (int x = a.x; x < x2; ++x) {
         int ypos = desty;
         for (int y = a.y; y < y2; ++y) {
-            if (Model *m = m_models(x, y))
+            if (Model *m = modelArray(x, y).get())
                 m->draw(gc, xpos, ypos);
             ypos += tileh;
         }
@@ -863,103 +772,101 @@ SpriteHandle::SpriteHandle(DL_Sprites *l, unsigned spriteid) : layer(l), id(spri
 }
 
 SpriteHandle::SpriteHandle() : layer(nullptr) {
-    id = DL_Sprites::MAGIC_SPRITEID;
+    id = DL_Sprites::MAGIC_SPRITE_ID;
 }
 
 void SpriteHandle::kill() {
     if (layer) {
-        layer->kill_sprite(id);
+        layer->killSprite(id);
         layer = nullptr;
-        id = DL_Sprites::MAGIC_SPRITEID;
+        id = DL_Sprites::MAGIC_SPRITE_ID;
     }
 }
 
 void SpriteHandle::move(const ecl::V2 &newpos) const {
     if (layer)
-        layer->move_sprite(id, newpos);
+        layer->moveSprite(id, newpos);
 }
 
-void SpriteHandle::replace_model(Model *m) const {
+void SpriteHandle::replace_model(std::unique_ptr<Model> m) const {
     if (layer)
-        layer->replace_sprite(id, m);
-    else
-        delete m;
+        layer->replaceSprite(id, std::move(m));
 }
 
 Model *SpriteHandle::get_model() const {
-    return layer ? layer->get_model(id) : nullptr;
+    return layer ? layer->getModel(id) : nullptr;
 }
 
 void SpriteHandle::set_callback(ModelCallback *cb) const {
     if (Model *m = get_model())
-        m->set_callback(cb);
+        m->setCallback(cb);
 }
 
 void SpriteHandle::hide() const {
     if (layer) {
-        Sprite *s = layer->get_sprite(id);
+        Sprite *s = layer->getSprite(id);
         if (s->visible) {
             s->visible = false;
-            layer->redraw_sprite_region(id);
+            layer->redrawSpriteRegion(id);
         }
     }
 }
 
 void SpriteHandle::show() const {
     if (layer) {
-        Sprite *s = layer->get_sprite(id);
+        Sprite *s = layer->getSprite(id);
         if (!s->visible) {
             s->visible = true;
-            layer->redraw_sprite_region(id);
+            layer->redrawSpriteRegion(id);
         }
     }
 }
 
 /* -------------------- Sprite layer -------------------- */
 
-DL_Sprites::DL_Sprites() : numsprites(0), maxsprites(1000), dispensiblesprites(1000) {
+DL_Sprites::DL_Sprites() : numSprites(0), maxSprites(1000), dispensableSprites(1000) {
 }
 
 DL_Sprites::~DL_Sprites() {
     delete_sequence(sprites.begin(), sprites.end());
 }
 
-Sprite *DL_Sprites::get_sprite(SpriteId id) {
-    ASSERT(id != MAGIC_SPRITEID, XLevelRuntime,
+Sprite *DL_Sprites::getSprite(SpriteId id) {
+    ASSERT(id != MAGIC_SPRITE_ID, XLevelRuntime,
            "Sprite layer fatal error: request of not existing sprite");
     return sprites[id];
 }
 
-void DL_Sprites::new_world(int w, int h) {
-    ModelLayer::new_world(w, h);
+void DL_Sprites::newWorld(int w, int h) {
+    ModelLayer::newWorld(w, h);
     delete_sequence(sprites.begin(), sprites.end());
     sprites.clear();
     Sprite *dummy = nullptr;
     bottomSprites.assign(w, dummy);
-    numsprites = 0;
+    numSprites = 0;
 }
 
-void DL_Sprites::move_sprite(SpriteId id, const ecl::V2 &newpos) {
+void DL_Sprites::moveSprite(SpriteId id, const ecl::V2 &newpos) {
     Sprite *sprite = sprites[id];
 
     int newx, newy;
-    get_engine()->world_to_video(newpos, &newx, &newy);
+    getEngine()->world_to_video(newpos, &newx, &newy);
 
-    if (newx != sprite->screenpos[0] || newy != sprite->screenpos[1]) {
-        update_sprite_region(sprite, false);  // make sure old sprite is removed
+    if (newx != sprite->screenPos[0] || newy != sprite->screenPos[1]) {
+        updateSpriteRegion(sprite, false);  // make sure old sprite is removed
         sprite->pos = newpos;
-        sprite->screenpos[0] = newx;
-        sprite->screenpos[1] = newy;
-        if (Anim2d *anim = dynamic_cast<Anim2d *>(sprite->model))
+        sprite->screenPos[0] = newx;
+        sprite->screenPos[1] = newy;
+        if (Anim2d *anim = dynamic_cast<Anim2d *>(sprite->model.get()))
             anim->move(newx, newy);
-        update_sprite_region(sprite, true);  // draw new sprite
+        updateSpriteRegion(sprite, true);  // draw new sprite
     }
 }
 
-SpriteId DL_Sprites::add_sprite(Sprite *sprite, bool isDispensible) {
-    if (numsprites >= maxsprites || (isDispensible && numsprites >= dispensiblesprites)) {
+SpriteId DL_Sprites::addSprite(Sprite *sprite, bool isDispensable) {
+    if (numSprites >= maxSprites || (isDispensable && numSprites >= dispensableSprites)) {
         delete sprite;
-        return MAGIC_SPRITEID;
+        return MAGIC_SPRITE_ID;
     }
 
     SpriteList &sl = sprites;
@@ -974,57 +881,56 @@ SpriteId DL_Sprites::add_sprite(Sprite *sprite, bool isDispensible) {
         id = distance(sl.begin(), i);
         *i = sprite;
     }
-    get_engine()->world_to_video(sprite->pos, &sprite->screenpos[0], &sprite->screenpos[1]);
-    if (Model *m = sprite->model)
-        m->expose(this, sprite->screenpos[0], sprite->screenpos[1]);
-    update_sprite_region(sprite, true);
-    numsprites += 1;
+    getEngine()->world_to_video(sprite->pos, &sprite->screenPos[0], &sprite->screenPos[1]);
+    if (Model *m = sprite->model.get())
+        m->expose(this, sprite->screenPos[0], sprite->screenPos[1]);
+    updateSpriteRegion(sprite, true);
+    numSprites += 1;
     return id;
 }
 
-void DL_Sprites::replace_sprite(SpriteId id, Model *m) {
+void DL_Sprites::replaceSprite(SpriteId id, std::unique_ptr<Model> m) {
     Sprite *sprite = sprites[id];
-    if (Model *old = sprite->model) {
-        update_sprite_region(sprite, false);
-        old->remove(this);
-        delete old;
+    if (Model *old = sprite->model.get()) {
+        updateSpriteRegion(sprite, false);
+        old->removeFromLayer(this);
     }
-    sprite->model = m;
-    if (m) {
-        m->expose(this, sprite->screenpos[0], sprite->screenpos[1]);
-        update_sprite_region(sprite, true);
+    sprite->model = std::move(m);
+    if (sprite->model) {
+        sprite->model->expose(this, sprite->screenPos[0], sprite->screenPos[1]);
+        updateSpriteRegion(sprite, true);
     }
 }
 
-void DL_Sprites::kill_sprite(SpriteId id) {
+void DL_Sprites::killSprite(SpriteId id) {
     if (Sprite *sprite = sprites[id]) {
-        update_sprite_region(sprite, false);
-        if (Model *m = sprite->model) {
-            m->remove(this);
+        updateSpriteRegion(sprite, false);
+        if (Model *m = sprite->model.get()) {
+            m->removeFromLayer(this);
         }
         sprites[id] = nullptr;
-        numsprites -= 1;
+        numSprites -= 1;
         delete sprite;
     }
 }
 
 void DL_Sprites::draw(ecl::GC &gc, const WorldArea &a, int /*x*/, int /*y*/) {
-    DisplayEngine *engine = get_engine();
+    DisplayEngine *engine = getEngine();
     clip(gc, intersect(engine->get_area(), engine->world_to_screen(a)));
-    draw_sprites(false, gc, a);
+    drawSprites(false, gc, a);
 }
 
-void DL_Sprites::draw_sprites(bool drawshadowp, GC &gc, const WorldArea &a) {
+void DL_Sprites::drawSprites(bool drawshadowp, GC &gc, const WorldArea &a) {
     int gx = a.x;
     for (int i = 0; i < a.w; i++, gx++) {
         int m = gx % 3;
         Sprite *s = bottomSprites[gx];
         for (; s != nullptr; s = s->above[m]) {
-            if (s && s->model && s->visible) {
+            if (s->model && s->visible) {
                 int sx, sy;
-                get_engine()->world_to_screen(s->pos, &sx, &sy);
+                getEngine()->world_to_screen(s->pos, &sx, &sy);
                 if (drawshadowp)
-                    s->model->draw_shadow(gc, sx, sy);
+                    s->model->drawShadow(gc, sx, sy);
                 else
                     s->model->draw(gc, sx, sy);
             }
@@ -1032,24 +938,24 @@ void DL_Sprites::draw_sprites(bool drawshadowp, GC &gc, const WorldArea &a) {
     }
 }
 
-void DL_Sprites::draw_onepass(ecl::GC & /*gc*/) {
+void DL_Sprites::drawSinglePass(ecl::GC & /*gc*/) {
     //     draw_sprites (false, gc);
 }
 
-void DL_Sprites::redraw_sprite_region(SpriteId id) {
+void DL_Sprites::redrawSpriteRegion(SpriteId id) {
     Sprite *s = sprites[id];
-    update_sprite_region(s, true, true);
+    updateSpriteRegion(s, true, true);
 }
 
-void DL_Sprites::update_sprite_region(Sprite *s, bool is_add, bool is_redraw_only) {
+void DL_Sprites::updateSpriteRegion(Sprite *s, bool is_add, bool is_redraw_only) {
     if (s && s->model) {
-        Rect r, redrawr;
-        s->model->get_extension(r);
-        r.x += s->screenpos[0];
-        r.y += s->screenpos[1];
-        DisplayEngine *e = get_engine();
-        e->video_to_world(r, redrawr);
-        e->mark_redraw_area(redrawr);
+        Rect redrawr;
+        Rect r = s->model->boundingBox();
+        r.x += s->screenPos[0];
+        r.y += s->screenPos[1];
+        DisplayEngine *e = getEngine();
+        e->videoToWorld(r, redrawr);
+        e->markRedrawArea(redrawr);
         if (is_redraw_only)
             return;
 
@@ -1089,10 +995,10 @@ void DL_Sprites::tick(double dtime) {
         if (!s || !s->model)
             continue;
 
-        if (s->model->is_garbage() && s->layer == SPRITE_EFFECT) {
+        if (s->model->hasFinished() && s->layer == SPRITE_EFFECT) {
             // Only remove effect sprites -- actor sprites remain in
             // the world all the time
-            kill_sprite(i);
+            killSprite(i);
         }
     }
     ModelLayer::tick(dtime);
@@ -1102,8 +1008,8 @@ void DL_Sprites::tick(double dtime) {
 // RUBBER BANDS
 //----------------------------------------------------------------------
 
-void DL_Lines::draw_onepass(ecl::GC &gc) {
-    DisplayEngine *engine = get_engine();
+void DL_Lines::drawSinglePass(ecl::GC &gc) {
+    DisplayEngine *engine = getEngine();
 
     //    set_color (gc, 240, 140, 20, 255);
     set_flags(gc.flags, GS_ANTIALIAS);
@@ -1123,10 +1029,10 @@ void DL_Lines::draw_onepass(ecl::GC &gc) {
     }
 }
 
-/* Mark the screen region occupied by a rubber band for redraw.
-   Problem is: what region is that exactly?  What pixels on the screen
+/* Mark the screen region occupied by a rubber band for redrawing.
+   The problem is: what region is that exactly?  What pixels on the screen
    will the line rasterizer touch?  Hard to tell, especially when
-   anti-aliasing is used.
+   antialiasing is used.
 
    This function constructs a list of rectangles that completely
    enclose the line by subdividing the line into n segments and
@@ -1135,16 +1041,16 @@ void DL_Lines::draw_onepass(ecl::GC &gc) {
    need to be enlarged by a small amount to make them overlap a bit.
 
    The number n of subdivision depends on the length of the line.  n=1
-   would of course do, but we want to redraw as little of the screen
+   would, of course, do, but we want to redraw as little of the screen
    as possible.  `n' is therefore chosen in such a way that the line
-   is covered with boxes of size not larger than `maxboxsize'.
+   is covered with boxes of size not larger than 'maxboxsize'.
 */
 void DL_Lines::mark_redraw_line(const Line &r) {
     const double maxboxsize = 0.5;
 
     double w0 = r.start[0] - r.end[0];
     double h0 = r.start[1] - r.end[1];
-    int n = int(max(abs(w0), abs(h0)) / maxboxsize) + 1;
+    int n = int(std::max(abs(w0), abs(h0)) / maxboxsize) + 1;
 
     double w = w0 / n;
     double h = h0 / n;
@@ -1172,57 +1078,57 @@ void DL_Lines::mark_redraw_line(const Line &r) {
         wa.w++;
         wa.h++;
 
-        get_engine()->mark_redraw_area(wa);
+        getEngine()->markRedrawArea(wa);
 
         x += w;
         y += h;
     }
 }
 
-RubberHandle DL_Lines::add_line(const V2 &p1, const V2 &p2, unsigned short rc, unsigned short gc,
-                                unsigned short bc, bool isThick) {
-    m_rubbers[m_id] = Line(p1, p2, rc, gc, bc, isThick);
+LineHandle DL_Lines::addLine(const V2 &start, const V2 &end, unsigned short red, unsigned short green,
+                                unsigned short blue, bool isThick) {
+    m_rubbers[m_id] = Line(start, end, red, green, blue, isThick);
     mark_redraw_line(m_rubbers[m_id]);
-    return RubberHandle(this, m_id++);
+    return LineHandle(this, m_id++);
 }
 
-void DL_Lines::set_startpoint(unsigned id, const V2 &p1) {
+void DL_Lines::setStart(unsigned id, const V2 &start) {
     mark_redraw_line(m_rubbers[id]);
-    m_rubbers[id].start = p1;
-    mark_redraw_line(m_rubbers[id]);
-}
-
-void DL_Lines::set_endpoint(unsigned id, const V2 &p2) {
-    mark_redraw_line(m_rubbers[id]);
-    m_rubbers[id].end = p2;
+    m_rubbers[id].start = start;
     mark_redraw_line(m_rubbers[id]);
 }
 
-void DL_Lines::kill_line(unsigned id) {
+void DL_Lines::setEnd(unsigned id, const V2 &end) {
+    mark_redraw_line(m_rubbers[id]);
+    m_rubbers[id].end = end;
+    mark_redraw_line(m_rubbers[id]);
+}
+
+void DL_Lines::killLine(unsigned id) {
     mark_redraw_line(m_rubbers[id]);
     auto i = m_rubbers.find(id);
     if (i != m_rubbers.end())
         m_rubbers.erase(i);
 }
 
-void DL_Lines::new_world(int /*w*/, int /*h*/) {
+void DL_Lines::newWorld(int /*w*/, int /*h*/) {
     m_rubbers.clear();
     m_id = 1;
 }
 
-RubberHandle::RubberHandle(DL_Lines *ll, unsigned id_) : line_layer(ll), id(id_) {
+LineHandle::LineHandle(DL_Lines* lineLayer, unsigned id) : lineLayer(lineLayer), id(id) {
 }
 
-void RubberHandle::update_first(const V2 &p1) {
-    line_layer->set_startpoint(id, p1);
+void LineHandle::setStartPoint(const V2 &start) {
+    lineLayer->setStart(id, start);
 }
 
-void RubberHandle::update_second(const V2 &p2) {
-    line_layer->set_endpoint(id, p2);
+void LineHandle::setEndPoint(const V2 &end) {
+    lineLayer->setEnd(id, end);
 }
 
-void RubberHandle::kill() {
-    line_layer->kill_line(id);
+void LineHandle::kill() {
+    lineLayer->killLine(id);
 }
 
 //----------------------------------------------------------------------
@@ -1230,8 +1136,8 @@ void RubberHandle::kill() {
 //----------------------------------------------------------------------
 
 /*
-** Drawing the shadows is a lot more difficult than drawing any of the
-** other layers.  There are a couple of reasons for this:
+** Drawing the shadows is more difficult than drawing any of the
+** other layers. There are a couple of reasons for this:
 **
 ** 1. Both Stones and actors cast a shadow.  Not a real problem, but
 **    it makes the implementation more complex.
@@ -1248,15 +1154,15 @@ void RubberHandle::kill() {
 **    avoid the buffer if possible.
 **
 ** So, how do we approach these problems? We handle stone and actor
-** shadows separately: The stone shadows do not change very often so
+** shadows separately: The stone shadows do not change very often, so
 ** it's easy to cache them, one tile at a time.  If there is no actor
-** on this tile, we can blit the cached image directly to the screen,
-** otherwise we have no choice but to use the buffer.
+** on this tile, we can blit the cached image directly to the screen.
+** Otherwise, we have no choice but to use the buffer.
 **
 ** The remaining problem is the shadow cache.  The easiest solution
 ** would be to use one huge image for the whole level and keep it in
 ** memory all the time.  This would consume roughly 20mb for a 100x100
-** landscape, which is of course excessive, considering that there are
+** landscape, which is, of course, excessive, considering that there are
 ** rarely more than 40 different shadow tiles in each landscape.
 **
 ** Instead, Enigma caches the most recently calculated shadow tiles in
@@ -1267,98 +1173,89 @@ void RubberHandle::kill() {
 
 namespace {
 
-struct ImageQuad {
-    Image *images[4];
+    struct ImageQuad {
+        Image* images[4];
 
-    ImageQuad() { /* do not initialize fields. */
-    }
+        ImageQuad() : images{} {}
 
-    ImageQuad(Image *i1, Image *i2, Image *i3, Image *i4) {
-        images[0] = i1;
-        images[1] = i2;
-        images[2] = i3;
-        images[3] = i4;
-    }
-    bool operator==(const ImageQuad &q) {
-        return (images[0] == q.images[0] && images[1] == q.images[1] && images[2] == q.images[2] &&
-                images[3] == q.images[3]);
-    }
-    Image *operator[](int idx) { return images[idx]; }
-};
+        ImageQuad(Image* i1, Image* i2, Image* i3, Image* i4) : images{i1, i2, i3, i4} {}
 
-// Returns true if all four models are static ImageModels; fills ImageQuad
-// with the corresponding images in this case.
-bool only_static_shadows(Model *models[4], ImageQuad &quad) {
-    int num_static_shadows = 4;
+        bool operator==(const ImageQuad& q) const {
+            return images[0] == q.images[0] && images[1] == q.images[1] && images[2] == q.images[2]
+                    && images[3] == q.images[3];
+        }
+        Image* operator[](int idx) const { return images[idx]; }
+    };
 
-    for (int i = 0; i < 4; ++i) {
-        if (models[i] == nullptr) {
-            // No model at all? -> static
-            quad.images[i] = nullptr;
-        } else if (Model *shadow = models[i]->get_shadow()) {
-            if (ImageModel *im = dynamic_cast<ImageModel *>(shadow)) {
-                // We have a model with a static image shadow
-                quad.images[i] = im->get_image();
-            } else {
+    // Returns true if all four models are static ImageModels; fills ImageQuad
+    // with the corresponding images in this case.
+    bool onlyStaticShadows(Model *models[4], ImageQuad &quad) {
+        int num_static_shadows = 4;
+
+        for (int i = 0; i < 4; ++i) {
+            if (models[i] == nullptr) {
+                // No model at all? -> static
                 quad.images[i] = nullptr;
-                num_static_shadows--;
-            }
-        } else
-            quad.images[i] = 0;
+            } else if (Model *shadow = models[i]->get_shadow()) {
+                if (ImageModel *im = dynamic_cast<ImageModel *>(shadow)) {
+                    // We have a model with a static image shadow
+                    quad.images[i] = im->get_image();
+                } else {
+                    quad.images[i] = nullptr;
+                    num_static_shadows--;
+                }
+            } else
+                quad.images[i] = nullptr;
+        }
+        return num_static_shadows == 4;
     }
-    return num_static_shadows == 4;
-}
 
-// Returns a new RGBA surface suitable for drawing shadows.
-SDL_Surface *CreateShadowSurface(int w, int h) {
-    SDL_Surface *ss = SDL_CreateRGBSurface(SDL_SWSURFACE, w, h, 32,
-            0xff0000, 0xff00, 0xff, 0xff000000);
-    SDL_SetSurfaceAlphaMod(ss, 128);
-    return ss;
-}
+    // Returns a new RGBA surface suitable for drawing shadows.
+    SDL_Surface *CreateShadowSurface(int width, int height) {
+        SDL_Surface *ss = SDL_CreateRGBSurface(SDL_SWSURFACE, width, height, 32,
+                0xff0000, 0xff00, 0xff, 0xff000000);
+        SDL_SetSurfaceAlphaMod(ss, 128);
+        return ss;
+    }
 
-struct StoneShadow {
-    ImageQuad images;
-    Surface *image;
-    bool in_cache;
+    struct StoneShadow {
+        ImageQuad images;
+        std::unique_ptr<Surface> surface;
+        bool inCache;
 
-    StoneShadow(ImageQuad iq, bool cached)
-    : images(std::move(iq)), image(nullptr), in_cache(cached) {}
-};
+        StoneShadow(const ImageQuad& images, bool cached)
+        : images(images), inCache(cached) {}
+    };
 
 }  // namespace
-
-namespace display {
 
 class StoneShadowCache : public ecl::Nocopy {
 public:
     StoneShadowCache(int tilew, int tileh);
     ~StoneShadowCache();
 
-    StoneShadow *retrieve(Model *models[4]);
-    void release(StoneShadow *s);
+    StoneShadow* retrieve(Model* models[4]);
+    void release(StoneShadow* s);
     void clear();
 
 private:
     // Private methods.
-    Surface *new_surface();
-    StoneShadow *find_in_cache(const ImageQuad &images);
+    std::unique_ptr<Surface> newSurface();
+    StoneShadow* findInCache(const ImageQuad& images);
 
-    void fill_image(StoneShadow *s);
-    void fill_image(StoneShadow *sh, Model *models[4]);
+    void fillImage(StoneShadow* s);
+    void fillImage(StoneShadow* sh, Model* models[4]);
 
     // Variables
     // Use std::list to maintain LRU cache.
-    std::list<StoneShadow *> m_cache;
-    int m_tilew, m_tileh;
-    std::vector<Surface *> m_surface_avail;
+    std::list<std::unique_ptr<StoneShadow>> lruCache;
+    int tileWidth, tileHeight;
+    std::vector<std::unique_ptr<Surface>> surfaceAvail;
 };
 
-}  // namespace display
-
 StoneShadowCache::StoneShadowCache(int tilew, int tileh) {
-    m_tilew = tilew;
-    m_tileh = tileh;
+    tileWidth = tilew;
+    tileHeight = tileh;
 }
 
 StoneShadowCache::~StoneShadowCache() {
@@ -1366,142 +1263,129 @@ StoneShadowCache::~StoneShadowCache() {
 }
 
 void StoneShadowCache::clear() {
-    for (auto &elem : m_cache) {
-        delete elem->image;
-        delete elem;
-    }
-    m_cache.clear();
-    delete_sequence(m_surface_avail.begin(), m_surface_avail.end());
-    m_surface_avail.clear();
+    lruCache.clear();
+    surfaceAvail.clear();
 }
 
-void StoneShadowCache::fill_image(StoneShadow *sh) {
+void StoneShadowCache::fillImage(StoneShadow *sh) {
     // Special case: no shadows at all:
     if (!sh->images[0] && !sh->images[1] && !sh->images[2] && !sh->images[3]) {
-        sh->image = nullptr;
+        sh->surface = nullptr;
         return;
     }
 
-    Surface *s = new_surface();
-    GC gc(s);
+    std::unique_ptr<Surface> surface = newSurface();
+    GC gc(surface.get());
     set_color(gc, 255, 255, 255, 0);
-    box(gc, s->size());
+    box(gc, surface->size());
 
     if (Image *i = sh->images[0])
-        draw_image(i, gc, -m_tilew, -m_tileh);
+        draw_image(i, gc, -tileWidth, -tileHeight);
     if (Image *i = sh->images[1])
-        draw_image(i, gc, 0, -m_tileh);
+        draw_image(i, gc, 0, -tileHeight);
     if (Image *i = sh->images[2])
-        draw_image(i, gc, -m_tilew, 0);
+        draw_image(i, gc, -tileWidth, 0);
     if (Image *i = sh->images[3])
         draw_image(i, gc, 0, 0);
-    sh->image = s;
+    sh->surface = std::move(surface);
 }
 
-void StoneShadowCache::fill_image(StoneShadow *sh, Model *models[4]) {
-    Surface *s = new_surface();
-    GC gc(s);
+void StoneShadowCache::fillImage(StoneShadow *sh, Model *models[4]) {
+    std::unique_ptr<Surface> s = newSurface();
+    GC gc(s.get());
     set_color(gc, 255, 255, 255, 0);
     box(gc, s->size());
     if (models[0])
-        models[0]->draw_shadow(gc, -m_tilew, -m_tileh);
+        models[0]->drawShadow(gc, -tileWidth, -tileHeight);
     if (models[1])
-        models[1]->draw_shadow(gc, 0, -m_tileh);
+        models[1]->drawShadow(gc, 0, -tileHeight);
     if (models[2])
-        models[2]->draw_shadow(gc, -m_tilew, 0);
+        models[2]->drawShadow(gc, -tileWidth, 0);
     if (models[3])
-        models[3]->draw_shadow(gc, 0, 0);
-    sh->image = s;
+        models[3]->drawShadow(gc, 0, 0);
+    sh->surface = std::move(s);
 }
 
-StoneShadow *StoneShadowCache::find_in_cache(const ImageQuad &images) {
-    for (auto i = m_cache.begin(); i != m_cache.end(); ++i) {
-        if ((*i)->images == images) {
-            StoneShadow *sh = *i;
+StoneShadow *StoneShadowCache::findInCache(const ImageQuad &images) {
+    for (auto it = lruCache.begin(); it != lruCache.end(); ++it) {
+        if ((*it)->images == images) {
+            StoneShadow *sh = it->get();
             // Move entry to front of list
-            m_cache.splice(m_cache.begin(), m_cache, i);
+            lruCache.splice(lruCache.begin(), lruCache, it);
             return sh;
         }
     }
     return nullptr;
 }
 
-/* Try to lookup the shadow created by the four models in `models[]'
+/* Try to look up the shadow created by the four models in 'models[]'
    in the shadow cache. */
 StoneShadow *StoneShadowCache::retrieve(Model *models[4]) {
     StoneShadow *shadow = nullptr;
-
     ImageQuad images;
 
     // Only cache static stone shadows, i.e., those consisting
     // only of Image models.
-    if (only_static_shadows(models, images)) {
-        shadow = find_in_cache(images);
+    if (onlyStaticShadows(models, images)) {
+        shadow = findInCache(images);
         if (!shadow) {
             shadow = new StoneShadow(images, true);
-            fill_image(shadow);
-            m_cache.push_front(shadow);
+            fillImage(shadow);
+            lruCache.push_front(std::unique_ptr<StoneShadow>(shadow));
         }
     } else {
         shadow = new StoneShadow(images, false);
-        fill_image(shadow, models);
+        fillImage(shadow, models);
     }
     return shadow;
 }
 
 void StoneShadowCache::release(StoneShadow *s) {
-    if (s->in_cache) {
+    if (s->inCache) {
         // Image is in cache, no need to free anything
     } else {
-        m_surface_avail.push_back(s->image);
+        surfaceAvail.push_back(std::move(s->surface));
         delete s;
     }
 }
 
-Surface *StoneShadowCache::new_surface() {
-    Surface *s = nullptr;
-    if (m_surface_avail.empty()) {
-        SDL_Surface *ss = CreateShadowSurface(m_tilew, m_tileh);
-        s = Surface::make_surface(ss);
+std::unique_ptr<Surface> StoneShadowCache::newSurface() {
+    std::unique_ptr<Surface> surface;
+    if (surfaceAvail.empty()) {
+        SDL_Surface *ss = CreateShadowSurface(tileWidth, tileHeight);
+        surface = Surface::make_surface(ss);
     } else {
-        s = m_surface_avail.back();
-        m_surface_avail.pop_back();
+        surface = std::move(surfaceAvail.back());
+        surfaceAvail.pop_back();
     }
-    return s;
+    return std::move(surface);
 }
 
 /* -------------------- Shadow layer -------------------- */
 
 DL_Shadows::DL_Shadows(DL_Grid *grid, DL_Sprites *sprites)
-: m_grid(grid), m_sprites(sprites), m_cache(nullptr), buffer(nullptr), m_hasactor(0, 0) {
+    : grid(grid), sprites(sprites), stoneShadowCache(nullptr), hasActor(0, 0) {
 }
 
-DL_Shadows::~DL_Shadows() {
-    delete m_cache;
-    delete buffer;
-}
+DL_Shadows::~DL_Shadows() = default;
 
-void DL_Shadows::new_world(int w, int h) {
-    m_hasactor.resize(w, h, false);
+void DL_Shadows::newWorld(int width, int height) {
+    hasActor.resize(width, height);
+    hasActor.fill(false);
 
-    DisplayEngine *e = get_engine();
-    int tilew = e->get_tilew();
-    int tileh = e->get_tileh();
+    DisplayEngine *engine = getEngine();
+    int tileWidth = engine->get_tilew();
+    int tileHeight = engine->get_tileh();
 
-    delete m_cache;
-    m_cache = new StoneShadowCache(tilew, tileh);
-
-    delete buffer;
-
-    SDL_Surface *ss = CreateShadowSurface(tilew, tileh);
-    buffer = Surface::make_surface(ss);
+    stoneShadowCache = std::make_unique<StoneShadowCache>(tileWidth, tileHeight);
+    buffer = Surface::make_surface(CreateShadowSurface(tileWidth, tileHeight));
 }
 
 void DL_Shadows::draw(ecl::GC &gc, const WorldArea &a, int destx, int desty) {
     int x2 = a.x + a.w;
     int y2 = a.y + a.h;
-    int tilew = get_engine()->get_tilew();
-    int tileh = get_engine()->get_tileh();
+    int tilew = getEngine()->get_tilew();
+    int tileh = getEngine()->get_tileh();
     int xpos = destx;
     for (int x = a.x; x < x2; ++x) {
         int ypos = desty;
@@ -1513,37 +1397,33 @@ void DL_Shadows::draw(ecl::GC &gc, const WorldArea &a, int destx, int desty) {
     }
 }
 
-bool DL_Shadows::has_actor(int x, int y) {
-    return m_hasactor(x, y);
-}
-
-// Prepare the shadows layer for a redraw. This routine pre-calculates the
+// Prepare the shadow layer for redrawing. This routine pre-calculates the
 // tiles that currently are partially covered by an actor.
-void DL_Shadows::prepare_draw(const WorldArea &wa) {
+void DL_Shadows::prepareDraw(const WorldArea &wa) {
     for (int i = 0; i < wa.w; ++i)
         for (int j = 0; j < wa.h; ++j)
-            m_hasactor(wa.x + i, wa.y + j) = false;
+            hasActor(wa.x + i, wa.y + j) = false;
 
-    for (auto s : m_sprites->sprites) {
+    for (auto s : sprites->sprites) {
         if (s && s->layer == SPRITE_ACTOR && s->model) {
             Rect r, redrawr;
-            s->model->get_extension(r);
-            r.x += s->screenpos[0];
-            r.y += s->screenpos[1];
-            DisplayEngine *e = get_engine();
-            e->video_to_world(r, redrawr);
+            r = s->model->boundingBox();
+            r.x += s->screenPos[0];
+            r.y += s->screenPos[1];
+            DisplayEngine *e = getEngine();
+            e->videoToWorld(r, redrawr);
             redrawr.intersect(wa);
 
             for (int i = 0; i < redrawr.w; ++i)
                 for (int j = 0; j < redrawr.h; ++j)
-                    m_hasactor(redrawr.x + i, redrawr.y + j) = true;
+                    hasActor(redrawr.x + i, redrawr.y + j) = true;
         }
     }
 }
 
-Model *DL_Shadows::get_shadow_model(int x, int y) {
+Model *DL_Shadows::getShadowModel(int x, int y) {
     if (x >= 0 && y >= 0) {
-        if (Model *m = m_grid->get_model(x, y))
+        if (Model *m = grid->getModel(x, y))
             return m;  // return m->get_shadow();
     }
     return nullptr;
@@ -1551,50 +1431,50 @@ Model *DL_Shadows::get_shadow_model(int x, int y) {
 
 void DL_Shadows::draw(GC &gc, int xpos, int ypos, int x, int y) {
     Model *models[4];
-    models[0] = get_shadow_model(x - 1, y - 1);
-    models[1] = get_shadow_model(x, y - 1);
-    models[2] = get_shadow_model(x - 1, y);
-    models[3] = get_shadow_model(x, y);
+    models[0] = getShadowModel(x - 1, y - 1);
+    models[1] = getShadowModel(x, y - 1);
+    models[2] = getShadowModel(x - 1, y);
+    models[3] = getShadowModel(x, y);
 
-    StoneShadow *sh = m_cache->retrieve(models);
+    StoneShadow *sh = stoneShadowCache->retrieve(models);
 
-    int tilew = get_engine()->get_tilew();
-    int tileh = get_engine()->get_tileh();
+    int tilew = getEngine()->get_tilew();
+    int tileh = getEngine()->get_tileh();
 
-    bool hasActor = this->has_actor(x, y);
-    if (hasActor || sh->image) {
-        Surface *s = sh->image;
+    bool hasActor = this->hasActor(x, y);
+    if (hasActor || sh->surface) {
+        Surface *shadowSurface = sh->surface.get();
         if (hasActor) {
-            GC gc2(buffer);
-            if (s) {
-                s->lock();
+            GC gc2(buffer.get());
+            if (shadowSurface) {
+                shadowSurface->lock();
                 buffer->lock();
-                SDL_Surface *ss = s->get_surface();
+                SDL_Surface *ss = shadowSurface->get_surface();
                 SDL_Surface *bs = buffer->get_surface();
                 memcpy(bs->pixels, ss->pixels, ss->w * ss->h * ss->format->BytesPerPixel);
                 buffer->unlock();
-                s->unlock();
+                shadowSurface->unlock();
             } else {
                 set_color(gc2, 255, 255, 255, 0);
                 box(gc2, buffer->size());
             }
 
             int m = x % 3;
-            Sprite *sp = m_sprites->bottomSprites[x];
+            Sprite *sp = sprites->bottomSprites[x];
             for (; sp != nullptr; sp = sp->above[m]) {
                 if (sp->visible && sp->model) {
                     int sx = round_nearest<int>(sp->pos[0] * tilew) - x * tilew;
                     int sy = round_nearest<int>(sp->pos[1] * tileh) - y * tileh;
-                    sp->model->draw_shadow(gc2, sx, sy);
+                    sp->model->drawShadow(gc2, sx, sy);
                 }
             }
-            blit(gc, xpos, ypos, buffer);
+            blit(gc, xpos, ypos, buffer.get());
         } else {
-            blit(gc, xpos, ypos, s);
+            blit(gc, xpos, ypos, shadowSurface);
         }
     }
 
-    m_cache->release(sh);
+    stoneShadowCache->release(sh);
 }
 
 //----------------------------------------------------------------------
@@ -1616,7 +1496,7 @@ CommonDisplay::CommonDisplay(const ScreenArea &a) {
     shadow_layer = new DL_Shadows(stone_layer, sprite_layer);
     line_layer = new DL_Lines;
     effects_layer = new DL_Sprites;
-    effects_layer->set_maxsprites(70, 50);
+    effects_layer->setMaxSprites(70, 50);
 
     // Register display layers
     m_engine->add_layer(floor_layer);
@@ -1632,55 +1512,60 @@ CommonDisplay::~CommonDisplay() {
     delete m_engine;
 }
 
-Model *CommonDisplay::set_model(const GridLoc &l, Model *m) {
+Model *CommonDisplay::set_model(const GridLoc &l, std::unique_ptr<Model> m) {
     int x = l.pos.x, y = l.pos.y;
 
+    Model *result = m.get();
     switch (l.layer) {
-    case GRID_FLOOR: floor_layer->set_model(x, y, m); break;
-    case GRID_ITEMS: item_layer->set_model(x, y, m); break;
-    case GRID_STONES:
-        stone_layer->set_model(x, y, m);
-        break;
-    case GRID_COUNT: break;
+        case GRID_FLOOR:
+            floor_layer->setModel(x, y, std::move(m));
+            break;
+        case GRID_ITEMS:
+            item_layer->setModel(x, y, std::move(m));
+            break;
+        case GRID_STONES:
+            stone_layer->setModel(x, y, std::move(m));
+            break;
+        case GRID_COUNT: break;
     }
-    return m;
+    return result;
 }
 
 Model *CommonDisplay::get_model(const GridLoc &l) {
     int x = l.pos.x, y = l.pos.y;
     switch (l.layer) {
-    case GRID_FLOOR: return floor_layer->get_model(x, y);
-    case GRID_ITEMS: return item_layer->get_model(x, y);
-    case GRID_STONES: return stone_layer->get_model(x, y);
-    case GRID_COUNT: return nullptr;
+        case GRID_FLOOR: return floor_layer->getModel(x, y);
+        case GRID_ITEMS: return item_layer->getModel(x, y);
+        case GRID_STONES: return stone_layer->getModel(x, y);
+        case GRID_COUNT: return nullptr;
     }
     return nullptr;
 }
 
-Model *CommonDisplay::yield_model(const GridLoc &l) {
+std::unique_ptr<Model> CommonDisplay::yield_model(const GridLoc &l) {
     int x = l.pos.x, y = l.pos.y;
     switch (l.layer) {
-    case GRID_FLOOR: return floor_layer->yield_model(x, y);
-    case GRID_ITEMS: return item_layer->yield_model(x, y);
-    case GRID_STONES: return stone_layer->yield_model(x, y);
-    case GRID_COUNT: return nullptr;
+        case GRID_FLOOR: return floor_layer->yieldModel(x, y);
+        case GRID_ITEMS: return item_layer->yieldModel(x, y);
+        case GRID_STONES: return stone_layer->yieldModel(x, y);
+        case GRID_COUNT: return nullptr;
     }
     return nullptr;
 }
 
-RubberHandle CommonDisplay::add_line(V2 p1, V2 p2, unsigned short rc, unsigned short gc,
+LineHandle CommonDisplay::add_line(V2 p1, V2 p2, unsigned short rc, unsigned short gc,
                                      unsigned short bc, bool isThick) {
-    return line_layer->add_line(p1, p2, rc, gc, bc, isThick);
+    return line_layer->addLine(p1, p2, rc, gc, bc, isThick);
 }
 
-SpriteHandle CommonDisplay::add_effect(const V2 &pos, Model *m, bool isDispensible) {
-    auto spr = new Sprite(pos, SPRITE_EFFECT, m);
-    return SpriteHandle(effects_layer, effects_layer->add_sprite(spr, isDispensible));
+SpriteHandle CommonDisplay::add_effect(const V2 &pos, std::unique_ptr<Model> m, bool isDispensable) {
+    auto spr = new Sprite(pos, SPRITE_EFFECT, std::move(m));
+    return SpriteHandle(effects_layer, effects_layer->addSprite(spr, isDispensable));
 }
 
-SpriteHandle CommonDisplay::add_sprite(const V2 &pos, Model *m) {
-    auto spr = new Sprite(pos, SPRITE_ACTOR, m);
-    return SpriteHandle(sprite_layer, sprite_layer->add_sprite(spr));
+SpriteHandle CommonDisplay::add_sprite(const V2 &pos, std::unique_ptr<Model> m) {
+    auto spr = new Sprite(pos, SPRITE_ACTOR, std::move(m));
+    return SpriteHandle(sprite_layer, sprite_layer->addSprite(spr));
 }
 
 void CommonDisplay::new_world(int w, int h) {
@@ -1688,145 +1573,145 @@ void CommonDisplay::new_world(int w, int h) {
 }
 
 void CommonDisplay::redraw() {
-    get_engine()->update_screen();
+    get_engine()->updateScreen();
 }
 
-void CommonDisplay::set_floor(int x, int y, Model *m) {
-    floor_layer->set_model(x, y, m);
+void CommonDisplay::set_floor(int x, int y, std::unique_ptr<Model> m) {
+    floor_layer->setModel(x, y, std::move(m));
 }
 
-void CommonDisplay::set_item(int x, int y, Model *m) {
-    item_layer->set_model(x, y, m);
+void CommonDisplay::set_item(int x, int y, std::unique_ptr<Model> m) {
+    item_layer->setModel(x, y, std::move(m));
 }
 
-void CommonDisplay::set_stone(int x, int y, Model *m) {
-    stone_layer->set_model(x, y, m);
+void CommonDisplay::set_stone(int x, int y, std::unique_ptr<Model> m) {
+    stone_layer->setModel(x, y, std::move(m));
 }
 
 //----------------------------------------------------------------------
 // Game Display Engine
 //----------------------------------------------------------------------
 
-GameDisplay::GameDisplay(const ScreenArea &gamearea, ScreenArea inventoryarea_)
-: CommonDisplay(gamearea),
-  last_frame_time(0),
-  redraw_everything(false),
-  m_reference_point(),
-  m_follower(nullptr),
-  inventoryarea(std::move(inventoryarea_)) {
-    status_bar = new StatusBarImpl(inventoryarea);
+GameDisplay::GameDisplay(const ScreenArea& gameArea, ScreenArea inventoryArea)
+    : CommonDisplay(gameArea), lastFrameTime(0), redrawEverything(false), follower(nullptr),
+      inventoryArea(inventoryArea) {
+    statusBar = std::make_unique<StatusBarImpl>(inventoryArea);
 }
 
-GameDisplay::~GameDisplay() {
-    delete m_follower;
-    delete status_bar;
-}
+GameDisplay::~GameDisplay() = default;
 
 void GameDisplay::tick(double dtime) {
     get_engine()->tick(dtime);
-    status_bar->tick(dtime);
+    statusBar->tick(dtime);
 
-    if (m_follower)
-        m_follower->tick(dtime, m_reference_point);
+    if (follower)
+        follower->tick(dtime, referencePoint);
 }
 
-void GameDisplay::new_world(int w, int h) {
-    CommonDisplay::new_world(w, h);
-    status_bar->new_world();
-    resize_game_area(NTILESH, NTILESV);
+void GameDisplay::newWorld(int width, int height) {
+    CommonDisplay::new_world(width, height);
+    statusBar->newWorld();
+    resizeGameArea(NTILESH, NTILESV);
     updateFollowMode();
-    m_reference_point = V2();
+    referencePoint = V2();
 }
 
-StatusBar *GameDisplay::get_status_bar() const {
-    return status_bar;
+StatusBar *GameDisplay::getStatusBar() const {
+    return statusBar.get();
 }
 
 /* -------------------- Scrolling -------------------- */
 
-void GameDisplay::set_follow_mode(FollowMode m) {
-    switch (m) {
-    case FOLLOW_NONEOLD: set_follower(nullptr); break;
-    case FOLLOW_SCROLLING: set_follower(new Follower_Scrolling(get_engine(), false)); break;
-    case FOLLOW_SCREEN: set_follower(new Follower_Screen(get_engine())); break;
-    case FOLLOW_SCREENSCROLLING:
-        set_follower(new Follower_Scrolling(get_engine(), true, 0.5, 0.5));
-        break;
-    case FOLLOW_SMOOTH: set_follower(new Follower_Smooth(get_engine()));
-    };
-    get_engine()->mark_redraw_screen();
-}
-
-void GameDisplay::updateFollowMode() {
-    if (!server::FollowGrid)
-        set_follower(new Follower_Smooth(get_engine()));
-    else if (server::FollowMethod == FOLLOW_NONE)
-        set_follower(nullptr);
-    else if (server::FollowMethod == FOLLOW_FLIP) {
-        if (server::FollowThreshold.getType() == Value::DOUBLE)
-            set_follower(new Follower_Screen(get_engine(), (double)server::FollowThreshold,
-                                             (double)server::FollowThreshold));
-        else
-            set_follower(new Follower_Screen(get_engine(), ecl::V2(server::FollowThreshold)[0],
-                                             ecl::V2(server::FollowThreshold)[1]));
-    } else if ((server::FollowThreshold.getType() == Value::DOUBLE) &&
-               ((double)server::FollowThreshold == 0.5) &&
-               (server::FollowAction == Value(ecl::V2(9.5, 6))))
-        set_follower(new Follower_Scrolling(get_engine(), false));
-    else {
-        if (server::FollowThreshold.getType() == Value::DOUBLE)
-            set_follower(new Follower_Scrolling(get_engine(), true, (double)server::FollowThreshold,
-                                                (double)server::FollowThreshold));
-        else
-            set_follower(new Follower_Scrolling(get_engine(), true,
-                                                ecl::V2(server::FollowThreshold)[0],
-                                                ecl::V2(server::FollowThreshold)[1]));
+void GameDisplay::setFollowMode(FollowMode followMode) {
+    switch (followMode) {
+        case FOLLOW_NONEOLD:
+            setFollower(nullptr);
+            break;
+        case FOLLOW_SCROLLING:
+            setFollower(std::make_unique<Follower_Scrolling>(get_engine(), false));
+            break;
+        case FOLLOW_SCREEN:
+            setFollower(std::make_unique<Follower_Screen>(get_engine()));
+            break;
+        case FOLLOW_SCREENSCROLLING:
+            setFollower(std::make_unique<Follower_Scrolling>(get_engine(), true, 0.5, 0.5));
+            break;
+        case FOLLOW_SMOOTH:
+            setFollower(std::make_unique<Follower_Smooth>(get_engine()));
     }
     get_engine()->mark_redraw_screen();
 }
 
-void GameDisplay::set_follower(Follower *f) {
-    delete m_follower;
-    if ((m_follower = f))
-        follow_center();
+void GameDisplay::updateFollowMode() {
+    if (!server::FollowGrid) {
+        setFollower(std::make_unique<Follower_Smooth>(get_engine()));
+    } else if (server::FollowMethod == FOLLOW_NONE) {
+        setFollower(nullptr);
+    } else if (server::FollowMethod == FOLLOW_FLIP) {
+        if (server::FollowThreshold.getType() == Value::DOUBLE) {
+            setFollower(std::make_unique<Follower_Screen>(get_engine(),
+                    server::FollowThreshold.toDouble(), server::FollowThreshold.toDouble()));
+        } else {
+            setFollower(std::make_unique<Follower_Screen>(get_engine(),
+                    server::FollowThreshold.toVec()[0], server::FollowThreshold.toVec()[1]));
+        }
+    } else if (server::FollowThreshold.getType() == Value::DOUBLE
+            && server::FollowThreshold.toDouble() == 0.5
+            && server::FollowAction == Value(ecl::V2(9.5, 6))) {
+        setFollower(std::make_unique<Follower_Scrolling>(get_engine(), false));
+    } else if (server::FollowThreshold.getType() == Value::DOUBLE) {
+        setFollower(std::make_unique<Follower_Scrolling>(get_engine(), true,
+                server::FollowThreshold.toDouble(), server::FollowThreshold.toDouble()));
+    } else {
+        setFollower(std::make_unique<Follower_Scrolling>(get_engine(), true,
+                ecl::V2(server::FollowThreshold.toVec())[0],
+                ecl::V2(server::FollowThreshold.toVec())[1]));
+    }
+    get_engine()->mark_redraw_screen();
 }
 
-void GameDisplay::follow_center() {
-    if (m_follower)
-        m_follower->center(m_reference_point);
+void GameDisplay::setFollower(std::unique_ptr<Follower> f) {
+    follower = std::move(f);
+    if (follower)
+        follower->center(referencePoint);
 }
 
-void GameDisplay::set_reference_point(const V2 &point) {
-    m_reference_point = point;
+void GameDisplay::followCenter() {
+    if (follower)
+        follower->center(referencePoint);
 }
 
-void GameDisplay::get_reference_point_coordinates(int *x, int *y) {
-    get_engine()->world_to_screen(m_reference_point, x, y);
+void GameDisplay::setReferencePoint(const V2 &point) {
+    referencePoint = point;
 }
 
-void GameDisplay::set_scroll_boundary(double boundary) {
-    if (m_follower)
-        m_follower->set_boundary(boundary);
+void GameDisplay::getReferencePointCoordinates(int *x, int *y) {
+    get_engine()->world_to_screen(referencePoint, x, y);
+}
+
+void GameDisplay::setScrollBoundary(double boundary) {
+    if (follower)
+        follower->setBorder(boundary, boundary);
 }
 
 /* ---------- Screen updates ---------- */
 
-void GameDisplay::redraw_all(Screen *scr) {
+void GameDisplay::redrawAll(Screen *scr) {
     get_engine()->mark_redraw_screen();
-    redraw_everything = true;
+    redrawEverything = true;
     scr->update_all();
     redraw(scr);
 }
 
 void GameDisplay::redraw(ecl::Screen *screen) {
     GC gc(screen->get_surface());
-    if (SDL_GetTicks() - last_frame_time > 10) {
+    if (SDL_GetTicks() - lastFrameTime > 10) {
         CommonDisplay::redraw();
 
         if (ShowFPS) {
             char fps[20];
-            sprintf(fps, "fps: %d\n", int(1000.0 / (SDL_GetTicks() - last_frame_time)));
-            Font *f = enigma::GetFont("levelmenu");
+            sprintf(fps, "fps: %d\n", int(1000.0 / (SDL_GetTicks() - lastFrameTime)));
+            Font *f = GetFont("levelmenu");
 
             clip(gc);
             Rect area(0, 0, 80, 20);
@@ -1836,58 +1721,58 @@ void GameDisplay::redraw(ecl::Screen *screen) {
 
             screen->update_rect(area);
         }
-        last_frame_time = SDL_GetTicks();
+        lastFrameTime = SDL_GetTicks();
     }
-    if (status_bar->has_changed() || redraw_everything) {
-        status_bar->redraw(gc, inventoryarea);
-        screen->update_rect(inventoryarea);
+    if (statusBar->hasChanged() || redrawEverything) {
+        statusBar->redraw(gc, inventoryArea);
+        screen->update_rect(inventoryArea);
     }
-    if (redraw_everything)
-        draw_borders(gc);
+    if (redrawEverything)
+        drawBorders(gc);
     screen->flush_updates();
-    redraw_everything = false;
+    redrawEverything = false;
 }
 
-void GameDisplay::draw_all(GC &gc) {
-    get_engine()->draw_all(gc);
-    status_bar->redraw(gc, inventoryarea);
-    draw_borders(gc);
+void GameDisplay::drawAll(GC &gc) {
+    get_engine()->drawAll(gc);
+    statusBar->redraw(gc, inventoryArea);
+    drawBorders(gc);
 }
 
-void GameDisplay::draw_borders(GC &gc) {
+void GameDisplay::drawBorders(GC &gc) {
     RectList rl;
     rl.push_back(gc.drawable->size());
     rl.sub(get_engine()->get_area());
-    rl.sub(inventoryarea);
+    rl.sub(inventoryArea);
     clip(gc);
     set_color(gc, 0, 0, 0);
     for (auto &rect : rl)
         box(gc, rect);
 }
 
-void GameDisplay::resize_game_area(int w, int h) {
+void GameDisplay::resizeGameArea(int width, int height) {
     DisplayEngine *e = get_engine();
-    int neww = w * e->get_tilew();
-    int newh = h * e->get_tileh();
+    int neww = width * e->get_tilew();
+    int newh = height * e->get_tileh();
 
     VideoTileset *vts = video_engine->GetTileset();
 
     int screenw = NTILESH * vts->tilesize;
     int screenh = NTILESV * vts->tilesize;
     if (neww > screenw || newh > screenh) {
-        enigma::Log << "Illegal screen size (" << neww << "," << newh
-                    << "): larger than physical display\n";
+        Log << "Illegal screen size (" << neww << "," << newh
+            << "): larger than physical display\n";
         return;
     }
     Rect r((screenw - neww) / 2, (screenh - newh) / 2, neww, newh);
     e->set_screen_area(r);
-    follow_center();
+    followCenter();
 }
 
 /* -------------------- Global functions -------------------- */
 
-void display::Init(bool show_fps) {
-    if (show_fps)  // keep ShowFPS on false for screen resolution changes
+void Init(bool showFps) {
+    if (showFps)  // keep ShowFPS on false for screen resolution changes
         ShowFPS = true;
     InitModels();
 
@@ -1895,115 +1780,117 @@ void display::Init(bool show_fps) {
     gamedpy = new GameDisplay(vminfo->gamearea, vminfo->statusbararea);
 }
 
-void display::Shutdown() {
+void Shutdown() {
     delete gamedpy;
     ShutdownModels();
 }
 
-void display::Tick(double dtime) {
+void Tick(double dtime) {
     gamedpy->tick(dtime);
 }
 
-StatusBar *display::GetStatusBar() {
-    return gamedpy->get_status_bar();
+StatusBar *GetStatusBar() {
+    return gamedpy->getStatusBar();
 }
 
-void display::NewWorld(int w, int h) {
-    gamedpy->new_world(w, h);
+void NewWorld(int w, int h) {
+    gamedpy->newWorld(w, h);
 }
 
-void display::FocusReferencePoint() {
-    gamedpy->follow_center();
+void FocusReferencePoint() {
+    gamedpy->followCenter();
 }
 
-void display::SetReferencePoint(const ecl::V2 &point) {
-    gamedpy->set_reference_point(point);
+void SetReferencePoint(const ecl::V2 &point) {
+    gamedpy->setReferencePoint(point);
 }
 
-void display::SetFollowMode(FollowMode m) {
-    gamedpy->set_follow_mode(m);
+void SetFollowMode(FollowMode m) {
+    gamedpy->setFollowMode(m);
 }
 
-void display::UpdateFollowMode() {
+void UpdateFollowMode() {
     gamedpy->updateFollowMode();
 }
 
-void display::SetScrollBoundary(double boundary) {
-    gamedpy->set_scroll_boundary(boundary);
+void SetScrollBoundary(double boundary) {
+    gamedpy->setScrollBoundary(boundary);
 }
 
-void display::GetReferencePointCoordinates(int *x, int *y) {
-    gamedpy->get_reference_point_coordinates(x, y);
+void GetReferencePointCoordinates(int *x, int *y) {
+    gamedpy->getReferencePointCoordinates(x, y);
 }
 
-Model *display::SetModel(const GridLoc &l, Model *m) {
-    return gamedpy->set_model(l, m);
+Model* SetModel(const GridLoc &l, std::unique_ptr<Model> m) {
+    return gamedpy->set_model(l, std::move(m));
 }
 
-Model *display::SetModel(const GridLoc &l, const string &modelname) {
+Model* SetModel(const GridLoc &l, const std::string &modelname) {
     return SetModel(l, MakeModel(modelname));
 }
 
-void display::KillModel(const GridLoc &l) {
-    delete YieldModel(l);
+void KillModel(const GridLoc &l) {
+    (void)YieldModel(l); // discard result
 }
 
-Model *display::GetModel(const GridLoc &l) {
+Model *GetModel(const GridLoc &l) {
     return gamedpy->get_model(l);
 }
 
-Model *display::YieldModel(const GridLoc &l) {
+std::unique_ptr<Model> YieldModel(const GridLoc &l) {
     return gamedpy->yield_model(l);
 }
 
-SpriteHandle display::AddEffect(const V2 &pos, const char *modelname, bool isDispensible) {
+SpriteHandle AddEffect(const V2 &pos, const char *modelname, bool isDispensible) {
     return gamedpy->add_effect(pos, MakeModel(modelname), isDispensible);
 }
 
-SpriteHandle display::AddSprite(const V2 &pos, const char *modelname) {
-    Model *m = modelname ? MakeModel(modelname) : nullptr;
-    return gamedpy->add_sprite(pos, m);
+SpriteHandle AddSprite(const V2 &pos, const char *modelname) {
+    std::unique_ptr<Model> m = modelname ? MakeModel(modelname) : nullptr;
+    return gamedpy->add_sprite(pos, std::move(m));
 }
 
-void display::ToggleFlag(DisplayFlags flag) {
+void ToggleFlag(DisplayFlags flag) {
     toggle_flags(display_flags, flag);
 }
 
-void display::DrawAll(GC &gc) {
-    gamedpy->draw_all(gc);
+void DrawAll(GC &gc) {
+    gamedpy->drawAll(gc);
 }
 
-void display::RedrawAll(Screen *screen) {
-    gamedpy->redraw_all(screen);
+void RedrawAll(Screen *screen) {
+    gamedpy->redrawAll(screen);
 }
 
-void display::Redraw(Screen *screen) {
+void Redraw(Screen *screen) {
     gamedpy->redraw(screen);
 }
 
-void display::ResizeGameArea(int w, int h) {
-    gamedpy->resize_game_area(w, h);
+void ResizeGameArea(int w, int h) {
+    gamedpy->resizeGameArea(w, h);
 }
-const Rect &display::GetGameArea() {
+const Rect &GetGameArea() {
     return gamedpy->get_engine()->get_area();
 }
 
-RubberHandle display::AddRubber(const V2 &p1, const V2 &p2, unsigned short rc, unsigned short gc,
-                                unsigned short bc, bool isThick) {
-    return gamedpy->add_line(p1, p2, rc, gc, bc, isThick);
+LineHandle AddRubber(const V2& start, const V2& end, unsigned short red,
+        unsigned short green, unsigned short blue, bool isThick) {
+    return gamedpy->add_line(start, end, red, green, blue, isThick);
 }
 
-void display::SetTextSpeed(int newspeed) {
-    int speed = ecl::Clamp<int>(newspeed, MIN_TextSpeed, MAX_TextSpeed);
+void SetTextSpeed(int newSpeed) {
+    int speed = ecl::Clamp<int>(newSpeed, MIN_TextSpeed, MAX_TextSpeed);
     app.state->setProperty("TextSpeed", speed);
 }
 
-int display::GetTextSpeed() {
+int GetTextSpeed() {
     int speed = app.state->getInt("TextSpeed");
     if (speed == 0) {
         // Text Speed has not been set yet. Use default.
         SetTextSpeed(DEFAULT_TextSpeed);
         return DEFAULT_TextSpeed;
-    } else
-        return speed;
+    }
+    return speed;
 }
+
+} // namespace enigma::display

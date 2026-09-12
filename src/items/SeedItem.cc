@@ -34,7 +34,7 @@ namespace enigma {
     
     void SeedItem::setAttr(const std::string& key, const Value &val) {
         if (key == "flavor") {
-            std::string flavor = val.to_string();
+            std::string flavor = val.toString();
             int code = 0;
             if (flavor == "wood") code = 0;
             else if (flavor == "greenbrown") code = 1;
@@ -107,7 +107,7 @@ namespace enigma {
        }
        Stone *st = MakeStone(flavor == 0 ? "st_box_wood_growing" : (flavor == 1 ? "st_greenbrown_growing" :
                (flavor == 2 ? "st_volcano_growing" : "st_box_hay_growing")));
-       ASSERT(st != NULL, XLevelRuntime, "SeedItem - failure on stone creation");
+       ASSERT(st != nullptr, XLevelRuntime, "SeedItem - failure on stone creation");
        transferIdentity(st);
        if (Value v = getAttr("secure"))
            st->setAttr("secure", v);

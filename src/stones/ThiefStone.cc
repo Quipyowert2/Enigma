@@ -27,12 +27,12 @@
 //#include "main.hh"
 
 namespace enigma {
-    ThiefStone::ThiefStone() : Stone(), victimId (0), bag (NULL) {
+    ThiefStone::ThiefStone() : Stone(), victimId (0), bag (nullptr) {
         
     }
     
     ThiefStone::~ThiefStone() {
-        if (bag != NULL)
+        if (bag != nullptr)
             delete bag;
     }
 
@@ -42,18 +42,18 @@ namespace enigma {
     
     Value ThiefStone::message(const Message &m) {
         if (m.message == "signal" && server::GameCompatibility != GAMET_ENIGMA) {
-            performAction(!m.value.to_bool());  // inverse signal multiplier
+            performAction(!m.value.toBool());  // inverse signal multiplier
             return Value();
         } else if (m.message == "_capture" && (state == IDLE || state == DRUNKEN) && isDisplayable()) {            
             // add items on grid pos that can be picked up to our bag
             Item * it =  GetItem(get_pos());
-            if (it != NULL && !(it->get_traits().flags & itf_static) && bag != NULL) {
+            if (it != nullptr && !(it->get_traits().flags & itf_static) && bag != nullptr) {
                 dynamic_cast<ItemHolder *>(bag)->add_item(YieldItem(get_pos()));
             }
             // drop bag if pos is not occupied by a static item
-            if (GetItem(get_pos()) == NULL) {
+            if (GetItem(get_pos()) == nullptr) {
                 SetItem(get_pos(), bag);
-                bag = NULL;
+                bag = nullptr;
             }
             state = (state == IDLE) ? CAPTURE : DRUNKENCAPTURE;
             init_model();
@@ -131,9 +131,9 @@ namespace enigma {
         if (Actor *victim = dynamic_cast<Actor *>(Object::getObject(victimId))) {
             if (Value owner = victim->getAttr("owner")) {
                 if (!(victim->has_shield())) {
-                    enigma::Inventory *inv = player::GetInventory(owner);
+                    enigma::Inventory *inv = player::GetInventory(owner.toInt());
                     if (inv && inv->size() > 0) {
-                        if (bag == NULL) {
+                        if (bag == nullptr) {
                             bag = MakeItem("it_bag");
                             bag->setOwnerPos(get_pos());
                         }

@@ -48,8 +48,8 @@ namespace enigma {
     Value FloodStream::message(const Message &m) {
         if (m.message == "_checkflood") {
             Item *it = GetItem(get_pos());
-            if (state == FLOODING && (m.value.to_bool() != true || (it != NULL && it->isKind("it_vortex_open"))))
-                GameTimer.set_alarm(this, (double)getAttr("interval"), false);
+            if (state == FLOODING && (m.value.toBool() != true || (it != nullptr && it->isKind("it_vortex_open"))))
+                GameTimer.set_alarm(this, getAttr("interval").toDouble(), false);
             return Value();
         } else
             return Floor::message(m);
@@ -57,9 +57,9 @@ namespace enigma {
 
     void FloodStream::setState(int extState) {
         if (isDisplayable() && extState == FLOODING && state == IDLE) {
-            if (getTyp() == WATER || getAttr("faces").to_string() == "nesw") {
+            if (getTyp() == WATER || getAttr("faces").toString() == "nesw") {
                 state = FLOODING;
-                GameTimer.set_alarm(this, (double)getAttr("interval"), false);
+                GameTimer.set_alarm(this, getAttr("interval").toDouble(), false);
             }
         } else if (extState == IDLE) {
             state = IDLE;
@@ -70,7 +70,7 @@ namespace enigma {
     
     std::string FloodStream::getModelName() const {
         std::string modelbase = getClass();
-        if (getAttr("faces").to_string() == "nesw")
+        if (getAttr("faces").toString() == "nesw")
              modelbase += "_framed";
         if (getTyp() == WOOD) {
             int modelnr = (objFlags & OBJBIT_MODEL) >> 26;
@@ -84,14 +84,14 @@ namespace enigma {
 
         if (getTyp() == WATER) {   // do flood some items
             Item *it = GetItem(p);
-            if (it != NULL && (it->isKind("it_meditation_hollow") || it->isKind("it_meditation_dent")
+            if (it != nullptr && (it->isKind("it_meditation_hollow") || it->isKind("it_meditation_dent")
                     || it->isKind("it_meditation_caldera") || it->isKind("it_crack")
                     || it->isKind("it_burnable_ash")))
                 KillItem(p);
         }
 
         if (state == FLOODING)
-            GameTimer.set_alarm(this, (double)getAttr("interval"), false);
+            GameTimer.set_alarm(this, getAttr("interval").toDouble(), false);
     }
     
     bool FloodStream::is_destructible() const {
@@ -107,7 +107,7 @@ namespace enigma {
     }
     
     void FloodStream::stone_change(Stone *st) {
-        if (getTyp() == WATER || getAttr("faces").to_string() == "nesw") {
+        if (getTyp() == WATER || getAttr("faces").toString() == "nesw") {
             SendMessage(GetFloor(get_pos()), "_checkflood");
             for (Direction d = NORTH; d != NODIR; d = previous(d))
                 SendMessage(GetFloor(move(get_pos(), d)), "_checkflood");
@@ -119,7 +119,7 @@ namespace enigma {
         if (isDisplayable()) {
             Stone *thisstone = GetStone(get_pos());
             for (Direction d = NORTH; d != NODIR; d = previous(d)) {
-                if (thisstone == NULL || thisstone->allowsSpreading(d)) {
+                if (thisstone == nullptr || thisstone->allowsSpreading(d)) {
                     tryFlood(move(get_pos(), d), reverse(d));
                 }
             }
@@ -134,24 +134,24 @@ namespace enigma {
     void FloodStream::tryFlood(GridPos p, Direction from) {
         if (IsInsideLevel(p)) {
             Floor *f = GetFloor(p);
-            if (f != NULL && f->isKind("fl_floodstream") && 
-                    (f->getAttr("faces").to_string() == "nesw" || f->isKind("fl_water"))) {
+            if (f != nullptr && f->isKind("fl_floodstream") &&
+                    (f->getAttr("faces").toString() == "nesw" || f->isKind("fl_water"))) {
                 if (f->isKind("fl_water") && f->getAttr("state") == IDLE) {
                     init_model();  // make flood visible
                     Item *it = GetItem(p);
-                    if (it != NULL && (it->isKind("it_crack") || (it->isKind("it_burnable") && !it->isKind("it_burnable_oil"))))
+                    if (it != nullptr && (it->isKind("it_crack") || (it->isKind("it_burnable") && !it->isKind("it_burnable_oil"))))
                         KillItem(p);
                 }
                 f->setAttr("interval", getAttr("interval"));
                 f->setAttr("state", FLOODING);
-            } else if (f != NULL && f->getAttr("floodable").to_bool()) {
+            } else if (f != nullptr && f->getAttr("floodable").toBool()) {
                 Stone *st = GetStone(p);
-                if (st == NULL || from == NODIR || st->allowsSpreading(from, true)) {
+                if (st == nullptr || from == NODIR || st->allowsSpreading(from, true)) {
                     Floor *newfloor = MakeFloor("fl_water_source");
                     newfloor->setAttr("interval", getAttr("interval"));
                     SetFloor(p, newfloor);
                     Item *it = GetItem(p);
-                    if (it != NULL && (it->isKind("it_crack") || (it->isKind("it_burnable") && !it->isKind("it_burnable_oil"))))
+                    if (it != nullptr && (it->isKind("it_crack") || (it->isKind("it_burnable") && !it->isKind("it_burnable_oil"))))
                         KillItem(p);
                 }
             }

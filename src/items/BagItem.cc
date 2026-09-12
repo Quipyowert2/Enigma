@@ -44,7 +44,7 @@ namespace enigma {
 
     void BagItem::dispose() {
         Item * it = yield_first();
-        while (it != NULL) {
+        while (it != nullptr) {
             DisposeObject(it);
             it = yield_first();
         }
@@ -62,7 +62,7 @@ namespace enigma {
             for (std::vector<Item *>::iterator itr = contents.begin(); itr != contents.end(); ++itr) {
                 Value v = (*itr)->getAttr("mass");
                 if (v.getType() == Value::DOUBLE)
-                    mass += (double)v; 
+                    mass += v.toDouble();
             }
             return mass;
         } else
@@ -104,7 +104,7 @@ namespace enigma {
         
     bool BagItem::actor_hit(Actor *a) {
         if (Item::actor_hit(a)) {
-            if (Inventory *inv = player::MayPickup(a, NULL)) {
+            if (Inventory *inv = player::MayPickup(a, nullptr)) {
                 std::vector<Item *>::size_type oldSize = m_contents.size();
                 inv->takeItemsFrom(this);
                 Glasses::updateGlasses();
@@ -130,7 +130,7 @@ namespace enigma {
         if (getOwner().getType() == Value::NIL)
             it->setOwnerPos(get_pos());  // item is at same position as bag
         else
-            it->setOwner(getOwner());
+            it->setOwner(getOwner().toInt());
     }
 
     bool BagItem::is_empty() const {
@@ -144,7 +144,7 @@ namespace enigma {
             it->setOwnerPos(GridPos(-1, -1));  // no owner
             return it;
         }
-        return NULL;
+        return nullptr;
     }
     
     bool BagItem::containsKind(std::string kind) const {
@@ -154,7 +154,7 @@ namespace enigma {
                 return true;
             else {
                 ItemHolder * ith = dynamic_cast<ItemHolder *>(*itr);
-                if (ith != NULL && ith->containsKind(kind))
+                if (ith != nullptr && ith->containsKind(kind))
                     return true;
             }
         }
